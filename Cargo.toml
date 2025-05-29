@@ -5,7 +5,7 @@ edition = "2024"
 
 [workspace]
 resolver = "2"
-members = ["crates/transform"]
+members = ["crates/render", "crates/transform"]
 
 [workspace.dependencies]
 bevy = { version = "0.16", default-features = false, features = [
@@ -26,12 +26,13 @@ tracing = { version = "0.1", features = [
     "max_level_debug",
     "release_max_level_warn",
 ] }
+render = { path = "crates/render" }
 transform = { path = "crates/transform" }
 
 [dependencies]
 bevy = { workspace = true }
-log = { workspace = true }
 tracing = { workspace = true }
+render = { workspace = true }
 transform = { workspace = true }
 
 # Idiomatic Bevy code often triggers these lints, and the CI workflow treats them as errors.

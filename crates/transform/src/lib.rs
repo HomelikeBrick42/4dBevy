@@ -1,4 +1,18 @@
-use bevy::prelude::*;
+use bevy::{
+    app::{App, Plugin, PostStartup, PostUpdate},
+    ecs::{
+        change_detection::{DetectChanges, DetectChangesMut},
+        component::Component,
+        entity::Entity,
+        hierarchy::ChildOf,
+        query::{Changed, Or, With, Without},
+        removal_detection::RemovedComponents,
+        schedule::IntoScheduleConfigs,
+        system::Query,
+        world::Ref,
+    },
+    reflect::{Reflect, prelude::ReflectDefault},
+};
 
 mod rotor;
 mod transform;
@@ -34,7 +48,6 @@ impl Plugin for TransformPlugin {
 
 #[derive(Component, Reflect, Default, Debug, Clone, Copy)]
 #[reflect(Default, Clone)]
-#[require(Transform)]
 pub struct GlobalTransform(pub Transform);
 
 fn normalise_transforms(mut transforms: Query<&mut Transform, Changed<Transform>>) {

@@ -8,7 +8,7 @@ use bevy::{
     },
     input::keyboard::KeyboardInput,
 };
-use log::info;
+use tracing::info;
 use transform::TransformPlugin;
 
 const PRINT_FPS: bool = false;

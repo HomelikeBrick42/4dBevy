@@ -1,5 +1,8 @@
-use crate::Rotor;
-use bevy::prelude::*;
+use crate::{GlobalTransform, Rotor};
+use bevy::{
+    ecs::component::Component,
+    reflect::{Reflect, prelude::ReflectDefault},
+};
 
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Default, Clone)]

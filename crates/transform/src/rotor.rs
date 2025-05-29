@@ -1,4 +1,8 @@
-use bevy::prelude::*;
+use crate::GlobalTransform;
+use bevy::{
+    ecs::component::Component,
+    reflect::{Reflect, prelude::ReflectDefault},
+};
 
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Default, Clone)]
