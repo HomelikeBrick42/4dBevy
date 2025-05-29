@@ -32,7 +32,7 @@ impl Plugin for TransformPlugin {
     }
 }
 
-#[derive(Component, Reflect, Default, Clone, Copy)]
+#[derive(Component, Reflect, Default, Debug, Clone, Copy)]
 #[reflect(Default, Clone)]
 #[require(Transform)]
 pub struct GlobalTransform(pub Transform);

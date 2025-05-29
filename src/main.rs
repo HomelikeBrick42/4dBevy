@@ -1,8 +1,14 @@
 use bevy::{
+    DefaultPlugins,
+    app::{App, AppExit, Startup, Update},
     diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    ecs::{
+        event::EventReader,
+        system::{Commands, Res},
+    },
     input::keyboard::KeyboardInput,
-    prelude::*,
 };
+use log::info;
 use transform::TransformPlugin;
 
 const PRINT_FPS: bool = false;
