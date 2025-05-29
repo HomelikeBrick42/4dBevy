@@ -1,0 +1,3 @@
+{
+    "rust-analyzer.check.overrideCommand": ["bevy", "lint", "--message-format=json", "--all-targets"],
+}
