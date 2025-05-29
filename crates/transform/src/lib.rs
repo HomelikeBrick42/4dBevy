@@ -12,33 +12,55 @@ impl Plugin for TransformPlugin {
             (
                 flag_orphans.before(compute_global_transform_parents),
                 compute_global_transform_children,
-            ),
+            )
+                .after(normalise_transforms),
         )
         .add_systems(
             PostUpdate,
             (
                 flag_orphans.before(compute_global_transform_parents),
                 compute_global_transform_children,
-            ),
+            )
+                .after(normalise_transforms),
         );
     }
 }
 
-#[derive(Component, Reflect, Default, Clone, Copy)]
+#[derive(Component, Reflect, Clone, Copy)]
 #[reflect(Default, Clone)]
 #[require(GlobalTransform)]
 pub struct Transform;
 
 impl Transform {
+    pub const IDENTITY: Self = Self;
+
     #[must_use]
     pub fn then(self, #[expect(unused)] other: Self) -> Self {
         self
+    }
+
+    #[must_use]
+    pub fn normalised(self) -> Self {
+        self
+    }
+}
+
+impl Default for Transform {
+    fn default() -> Self {
+        Self::IDENTITY
     }
 }
 
 #[derive(Component, Reflect, Default, Clone, Copy)]
 #[reflect(Default, Clone)]
+#[require(Transform)]
 pub struct GlobalTransform(pub Transform);
+
+fn normalise_transforms(mut transforms: Query<&mut Transform, Changed<Transform>>) {
+    transforms
+        .par_iter_mut()
+        .for_each(|mut transform| *transform = transform.normalised());
+}
 
 fn flag_orphans(
     mut global_transforms: Query<&mut GlobalTransform>,
