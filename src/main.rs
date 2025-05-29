@@ -16,13 +16,14 @@ const PRINT_FPS: bool = false;
 fn main() -> AppExit {
     let mut app = App::new();
 
-    if PRINT_FPS {
-        app.add_plugins(FrameTimeDiagnosticsPlugin::default());
-    }
-
     app.add_plugins((DefaultPlugins, TransformPlugin))
         .add_systems(Startup, setup)
-        .add_systems(Update, (print_diagnostics, print_key_presses));
+        .add_systems(Update, print_key_presses);
+
+    if PRINT_FPS {
+        app.add_plugins(FrameTimeDiagnosticsPlugin::default())
+            .add_systems(Update, print_diagnostics);
+    }
 
     app.run()
 }
