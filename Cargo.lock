@@ -799,6 +799,8 @@ name = "bevy_testing"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "log",
+ "tracing",
  "transform",
 ]
 
