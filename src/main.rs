@@ -1,9 +1,6 @@
 use bevy::{
     a11y::AccessibilityPlugin,
-    app::{
-        App, AppExit, PanicHandlerPlugin, Startup, TaskPoolPlugin, TerminalCtrlCHandlerPlugin,
-        Update,
-    },
+    app::{App, AppExit, PanicHandlerPlugin, Startup, TaskPoolPlugin, Update},
     asset::AssetPlugin,
     diagnostic::{
         DiagnosticsPlugin, DiagnosticsStore, FrameCountPlugin, FrameTimeDiagnosticsPlugin,
@@ -13,12 +10,12 @@ use bevy::{
         system::{Commands, Res},
     },
     input::{InputPlugin, keyboard::KeyboardInput},
-    log::LogPlugin,
+    log::{LogPlugin, info},
     time::TimePlugin,
     window::WindowPlugin,
     winit::WinitPlugin,
 };
-use tracing::info;
+use render::RenderPlugin;
 use transform::TransformPlugin;
 
 const PRINT_FPS: bool = false;
@@ -36,10 +33,10 @@ fn main() -> AppExit {
         InputPlugin,
         WindowPlugin::default(),
         AccessibilityPlugin,
-        TerminalCtrlCHandlerPlugin,
         AssetPlugin::default(),
         <WinitPlugin>::default(),
         TransformPlugin,
+        RenderPlugin,
     ))
     .add_systems(Startup, setup)
     .add_systems(Update, print_key_presses);

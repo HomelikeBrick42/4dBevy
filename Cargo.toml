@@ -31,7 +31,6 @@ transform = { path = "crates/transform" }
 
 [dependencies]
 bevy = { workspace = true }
-tracing = { workspace = true }
 render = { workspace = true }
 transform = { workspace = true }
 
