@@ -1,12 +1,22 @@
 use bevy::{
-    DefaultPlugins,
-    app::{App, AppExit, Startup, Update},
-    diagnostic::{DiagnosticsStore, FrameTimeDiagnosticsPlugin},
+    a11y::AccessibilityPlugin,
+    app::{
+        App, AppExit, PanicHandlerPlugin, Startup, TaskPoolPlugin, TerminalCtrlCHandlerPlugin,
+        Update,
+    },
+    asset::AssetPlugin,
+    diagnostic::{
+        DiagnosticsPlugin, DiagnosticsStore, FrameCountPlugin, FrameTimeDiagnosticsPlugin,
+    },
     ecs::{
         event::EventReader,
         system::{Commands, Res},
     },
-    input::keyboard::KeyboardInput,
+    input::{InputPlugin, keyboard::KeyboardInput},
+    log::LogPlugin,
+    time::TimePlugin,
+    window::WindowPlugin,
+    winit::WinitPlugin,
 };
 use tracing::info;
 use transform::TransformPlugin;
@@ -16,9 +26,23 @@ const PRINT_FPS: bool = false;
 fn main() -> AppExit {
     let mut app = App::new();
 
-    app.add_plugins((DefaultPlugins, TransformPlugin))
-        .add_systems(Startup, setup)
-        .add_systems(Update, print_key_presses);
+    app.add_plugins((
+        PanicHandlerPlugin,
+        LogPlugin::default(),
+        TaskPoolPlugin::default(),
+        FrameCountPlugin,
+        TimePlugin,
+        DiagnosticsPlugin,
+        InputPlugin,
+        WindowPlugin::default(),
+        AccessibilityPlugin,
+        TerminalCtrlCHandlerPlugin,
+        AssetPlugin::default(),
+        <WinitPlugin>::default(),
+        TransformPlugin,
+    ))
+    .add_systems(Startup, setup)
+    .add_systems(Update, print_key_presses);
 
     if PRINT_FPS {
         app.add_plugins(FrameTimeDiagnosticsPlugin::default())
