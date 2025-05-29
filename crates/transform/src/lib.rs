@@ -1,5 +1,11 @@
 use bevy::prelude::*;
 
+mod rotor;
+mod transform;
+
+pub use rotor::Rotor;
+pub use transform::Transform;
+
 pub struct TransformPlugin;
 
 impl Plugin for TransformPlugin {
@@ -23,31 +29,6 @@ impl Plugin for TransformPlugin {
             )
                 .after(normalise_transforms),
         );
-    }
-}
-
-#[derive(Component, Reflect, Clone, Copy)]
-#[reflect(Default, Clone)]
-#[require(GlobalTransform)]
-pub struct Transform;
-
-impl Transform {
-    pub const IDENTITY: Self = Self;
-
-    #[must_use]
-    pub fn then(self, #[expect(unused)] other: Self) -> Self {
-        self
-    }
-
-    #[must_use]
-    pub fn normalised(self) -> Self {
-        self
-    }
-}
-
-impl Default for Transform {
-    fn default() -> Self {
-        Self::IDENTITY
     }
 }
 
