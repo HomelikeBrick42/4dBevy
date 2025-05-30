@@ -51,7 +51,7 @@ FragmentOutput fragment(VertexOutput in)
     ray.direction = normalize(forward + right * in.uv.x * camera.aspect + up * in.uv.y);
 
     let hit = intersect_scene(ray);
-    if (hit.hasValue && hit.value.distance >= camera.min_ray_distance && hit.value.distance <= camera.max_distance)
+    if (hit.hasValue)
     {
         let hit = hit.value;
 
@@ -95,7 +95,7 @@ Optional<Hit> intersect_scene(Ray ray)
     var hit : Optional<Hit> = none;
     for (var i = 0u; i < objects_info.hyper_sphere_count; i++)
     {
-        let maybe_hit = hyper_spheres[i].intersect(ray);
+        let maybe_hit = hyper_spheres[i].intersect(ray, camera.min_ray_distance, camera.max_distance);
         if (maybe_hit.hasValue)
             if (!hit.hasValue || maybe_hit.value.distance < hit.value.distance)
                 hit = maybe_hit;

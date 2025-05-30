@@ -8,7 +8,7 @@ struct HyperSphere
     Material material;
     float radius;
 
-    Optional<Hit> intersect(Ray ray)
+    Optional<Hit> intersect(Ray ray, float min_distance, float max_distance)
     {
         let position = transform.transform(float4(0.0, 0.0, 0.0, 0.0));
 
@@ -24,7 +24,7 @@ struct HyperSphere
 
         var hit : Hit;
         hit.distance = (h - sqrt(discriminant)) / a;
-        if (hit.distance < 0.0)
+        if (hit.distance < min_distance || hit.distance > max_distance)
             return none;
 
         hit.position = ray.origin + ray.direction * hit.distance;
