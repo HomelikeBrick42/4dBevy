@@ -3,10 +3,12 @@ use bevy::{
     ecs::component::Component,
     reflect::{Reflect, prelude::ReflectDefault},
 };
+use bytemuck::{Pod, Zeroable};
 
-#[derive(Component, Reflect, Debug, Clone, Copy)]
+#[derive(Component, Reflect, Debug, Clone, Copy, Zeroable, Pod)]
 #[reflect(Default, Clone)]
 #[require(GlobalTransform)]
+#[repr(C)]
 pub struct Rotor {
     pub s: f32,
     pub e12: f32,

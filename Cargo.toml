@@ -17,6 +17,7 @@ bevy = { version = "0.16", default-features = false, features = [
     "bevy_winit",
     "multi_threaded",
 ] }
+bytemuck = "1.23.0"
 # Set max log levels. This helps avoid unwanted low-severity log spam, which can affect performance.
 log = { version = "0.4", features = [
     "max_level_debug",

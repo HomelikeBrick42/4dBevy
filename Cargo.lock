@@ -2694,6 +2694,7 @@ name = "render"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bytemuck",
  "transform",
  "wgpu 25.0.2",
 ]
@@ -3101,6 +3102,7 @@ name = "transform"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bytemuck",
 ]
 
 [[package]]

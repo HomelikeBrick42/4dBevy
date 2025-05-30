@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = { workspace = true }
+bytemuck = { workspace = true }
 transform = { workspace = true }
 wgpu = { version = "25.0.2", features = ["fragile-send-sync-non-atomic-wasm"] }
 

@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 bevy = { workspace = true }
+bytemuck = { workspace = true }
 
 [lints]
 workspace = true

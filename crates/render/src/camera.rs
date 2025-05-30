@@ -1,3 +1,5 @@
+use std::num::NonZeroU64;
+
 use bevy::{
     ecs::{
         change_detection::DetectChanges,
@@ -5,8 +7,10 @@ use bevy::{
         system::{Query, Res},
         world::Ref,
     },
+    log::info,
     reflect::{Reflect, prelude::ReflectDefault},
 };
+use bytemuck::{Pod, Zeroable};
 use transform::{GlobalTransform, Transform};
 
 use crate::RenderState;
@@ -37,6 +41,16 @@ impl Default for Camera {
 #[require(Camera)]
 pub struct MainCamera;
 
+#[derive(Zeroable, Pod, Clone, Copy)]
+#[repr(C)]
+pub(super) struct GpuCamera {
+    transform: Transform,
+    fov: f32,
+    min_ray_distance: f32,
+    max_distance: f32,
+    max_bounces: u32,
+}
+
 pub(super) fn upload_camera(
     state: Res<RenderState>,
     main_camera: Query<(Ref<GlobalTransform>, Ref<Camera>, Ref<MainCamera>)>,
@@ -46,7 +60,29 @@ pub(super) fn upload_camera(
         .expect("there should only be one MainCamera");
 
     if transform.is_changed() || camera.is_changed() || main_camera.is_changed() {
-        // TODO: upload camera info
-        _ = state;
+        let transform = transform.0;
+        let Camera {
+            fov,
+            min_ray_distance,
+            max_distance,
+            max_bounces,
+        } = *camera;
+        let gpu_camera = GpuCamera {
+            transform,
+            fov,
+            min_ray_distance,
+            max_distance,
+            max_bounces,
+        };
+
+        let mut camera_buffer = state
+            .queue
+            .write_buffer_with(
+                &state.camera_buffer,
+                0,
+                const { NonZeroU64::new(size_of::<GpuCamera>() as _).unwrap() },
+            )
+            .unwrap();
+        camera_buffer.copy_from_slice(bytemuck::bytes_of(&gpu_camera));
     }
 }

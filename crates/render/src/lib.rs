@@ -4,6 +4,7 @@ use bevy::{
     log::info,
     window::{PrimaryWindow, RawHandleWrapperHolder},
 };
+use camera::GpuCamera;
 use std::{cell::Cell, rc::Rc};
 
 mod camera;
@@ -26,6 +27,7 @@ pub struct RenderState {
     pub surface: wgpu::Surface<'static>,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    camera_buffer: wgpu::Buffer,
 }
 
 pub struct RenderPlugin;
@@ -98,11 +100,19 @@ impl Plugin for RenderPlugin {
 
                 info!("Created device and queue");
 
+                let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("Camera Buffer"),
+                    size: size_of::<GpuCamera>() as _,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+                    mapped_at_creation: false,
+                });
+
                 state.set(Some(RenderState {
                     instance,
                     surface,
                     device,
                     queue,
+                    camera_buffer,
                 }));
             }
         };
