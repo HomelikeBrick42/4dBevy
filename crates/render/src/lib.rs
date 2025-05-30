@@ -7,12 +7,19 @@ use bevy::{
     log::info,
     window::{PrimaryWindow, RawHandleWrapperHolder, WindowResized},
 };
+use bytemuck::{Pod, Zeroable};
 use camera::GpuCamera;
+use hyper_sphere::GpuHyperSphere;
 use std::{cell::Cell, num::NonZeroU64, rc::Rc};
+use wgpu::util::DeviceExt;
 
 mod camera;
+mod hyper_sphere;
+mod material;
 
 pub use camera::{Camera, MainCamera};
+pub use hyper_sphere::Hypersphere;
+pub use material::{Color, Material};
 
 #[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PreRender;
@@ -32,9 +39,24 @@ pub struct RenderState {
     pub surface_config: wgpu::SurfaceConfiguration,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
+
+    hyper_spheres_count: u32,
+    hyper_spheres_buffer: wgpu::Buffer,
+
+    objects_info_buffer: wgpu::Buffer,
+    objects_bind_group_layout: wgpu::BindGroupLayout,
+    objects_bind_group: wgpu::BindGroup,
+
     full_screen_quad_render_pipeline: wgpu::RenderPipeline,
+}
+
+#[derive(Clone, Copy, Zeroable, Pod)]
+#[repr(C)]
+struct GpuObjectsInfo {
+    hyper_spheres_count: u32,
 }
 
 pub struct RenderPlugin;
@@ -130,7 +152,7 @@ impl Plugin for RenderPlugin {
                         label: Some("Camera Bind Group Layout"),
                         entries: &[wgpu::BindGroupLayoutEntry {
                             binding: 0,
-                            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                            visibility: wgpu::ShaderStages::FRAGMENT,
                             ty: wgpu::BindingType::Buffer {
                                 ty: wgpu::BufferBindingType::Uniform,
                                 has_dynamic_offset: false,
@@ -148,6 +170,66 @@ impl Plugin for RenderPlugin {
                     }],
                 });
 
+                let hyper_spheres_count = 0;
+                let hyper_spheres_min_size = size_of::<GpuHyperSphere>() as wgpu::BufferAddress;
+                let hyper_spheres_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("HyperSpheres Buffer"),
+                    size: hyper_spheres_min_size,
+                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
+                    mapped_at_creation: false,
+                });
+
+                let objects_info_buffer =
+                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                        label: Some("Objects Info Buffer"),
+                        contents: bytemuck::bytes_of(&GpuObjectsInfo {
+                            hyper_spheres_count,
+                        }),
+                        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+                    });
+                let objects_bind_group_layout =
+                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some("HyperSpheres Bind Group Layout"),
+                        entries: &[
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 0,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Buffer {
+                                    ty: wgpu::BufferBindingType::Uniform,
+                                    has_dynamic_offset: false,
+                                    min_binding_size: NonZeroU64::new(
+                                        size_of::<GpuObjectsInfo>() as _
+                                    ),
+                                },
+                                count: None,
+                            },
+                            wgpu::BindGroupLayoutEntry {
+                                binding: 1,
+                                visibility: wgpu::ShaderStages::FRAGMENT,
+                                ty: wgpu::BindingType::Buffer {
+                                    ty: wgpu::BufferBindingType::Storage { read_only: true },
+                                    has_dynamic_offset: false,
+                                    min_binding_size: NonZeroU64::new(hyper_spheres_min_size),
+                                },
+                                count: None,
+                            },
+                        ],
+                    });
+                let objects_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("HyperSpheres Bind Group"),
+                    layout: &objects_bind_group_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: objects_info_buffer.as_entire_binding(),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: hyper_spheres_buffer.as_entire_binding(),
+                        },
+                    ],
+                });
+
                 let full_screen_quad_shader = device.create_shader_module(wgpu::include_wgsl!(
                     concat!(env!("OUT_DIR"), "/shaders/full_screen_quad.wgsl",)
                 ));
@@ -155,7 +237,10 @@ impl Plugin for RenderPlugin {
                 let full_screen_quad_render_pipeline_layout =
                     device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                         label: Some("Full Screen Quad Render Pipeline Layout"),
-                        bind_group_layouts: &[&camera_bind_group_layout],
+                        bind_group_layouts: &[
+                            &camera_bind_group_layout,
+                            &objects_bind_group_layout,
+                        ],
                         push_constant_ranges: &[],
                     });
                 let full_screen_quad_render_pipeline =
@@ -206,8 +291,17 @@ impl Plugin for RenderPlugin {
                     surface_config,
                     device,
                     queue,
+
                     camera_buffer,
                     camera_bind_group,
+
+                    hyper_spheres_count,
+                    hyper_spheres_buffer,
+
+                    objects_info_buffer,
+                    objects_bind_group_layout,
+                    objects_bind_group,
+
                     full_screen_quad_render_pipeline,
                 }));
             }
@@ -225,7 +319,10 @@ impl Plugin for RenderPlugin {
 
         app.register_type::<Camera>()
             .register_type::<MainCamera>()
-            .add_systems(PreRender, camera::upload_camera)
+            .add_systems(
+                PreRender,
+                (camera::upload_camera, hyper_sphere::upload_hyper_spheres),
+            )
             .add_systems(Render, render);
     }
 
@@ -260,8 +357,17 @@ fn render(
         ref mut surface_config,
         ref device,
         ref queue,
+
         camera_buffer: _,
         ref camera_bind_group,
+
+        hyper_spheres_count: _,
+        hyper_spheres_buffer: _,
+
+        objects_info_buffer: _,
+        objects_bind_group_layout: _,
+        ref objects_bind_group,
+
         ref full_screen_quad_render_pipeline,
     } = *state;
 
@@ -314,6 +420,7 @@ fn render(
 
         render_pass.set_pipeline(full_screen_quad_render_pipeline);
         render_pass.set_bind_group(0, camera_bind_group, &[]);
+        render_pass.set_bind_group(1, objects_bind_group, &[]);
         render_pass.draw(0..4, 0..1);
     }
 
