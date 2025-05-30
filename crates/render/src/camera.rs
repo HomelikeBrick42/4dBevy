@@ -73,14 +73,8 @@ pub(super) fn upload_camera(
             max_bounces,
         };
 
-        let mut camera_buffer = state
+        state
             .queue
-            .write_buffer_with(
-                &state.camera_buffer,
-                0,
-                const { NonZeroU64::new(size_of::<GpuCamera>() as _).unwrap() },
-            )
-            .unwrap();
-        camera_buffer.copy_from_slice(bytemuck::bytes_of(&gpu_camera));
+            .write_buffer(&state.camera_buffer, 0, bytemuck::bytes_of(&gpu_camera));
     }
 }
