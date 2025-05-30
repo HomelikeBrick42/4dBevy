@@ -45,7 +45,7 @@ fn main() -> AppExit {
         RenderPlugin,
     ))
     .add_systems(Startup, setup)
-    .add_systems(Update, movement_controls);
+    .add_systems(Update, (handle_cursor_locking, movement_controls));
 
     if PRINT_FPS {
         app.add_plugins(FrameTimeDiagnosticsPlugin::default())
@@ -67,33 +67,35 @@ fn setup(mut commands: Commands) {
     ));
 }
 
+fn handle_cursor_locking(
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+) {
+    let mut primary_window = primary_window
+        .single_mut()
+        .expect("there should only be one primary window");
+    if mouse_buttons.just_pressed(MouseButton::Left)
+        || mouse_buttons.just_pressed(MouseButton::Right)
+    {
+        primary_window.cursor_options.visible = false;
+        primary_window.cursor_options.grab_mode = CursorGrabMode::Locked;
+    }
+    if !primary_window.cursor_options.visible
+        && !mouse_buttons.pressed(MouseButton::Left)
+        && !mouse_buttons.pressed(MouseButton::Right)
+    {
+        primary_window.cursor_options.visible = true;
+        primary_window.cursor_options.grab_mode = CursorGrabMode::None;
+    }
+}
+
 fn movement_controls(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut mouse: EventReader<MouseMotion>,
     mut transform: Query<&mut Transform, With<MovementControl>>,
-    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
 ) {
-    {
-        let mut primary_window = primary_window
-            .single_mut()
-            .expect("there should only be one primary window");
-        if mouse_buttons.just_pressed(MouseButton::Left)
-            || mouse_buttons.just_pressed(MouseButton::Right)
-        {
-            primary_window.cursor_options.visible = false;
-            primary_window.cursor_options.grab_mode = CursorGrabMode::Locked;
-        }
-        if !primary_window.cursor_options.visible
-            && !mouse_buttons.pressed(MouseButton::Left)
-            && !mouse_buttons.pressed(MouseButton::Right)
-        {
-            primary_window.cursor_options.visible = true;
-            primary_window.cursor_options.grab_mode = CursorGrabMode::None;
-        }
-    }
-
     let mut transform = transform
         .single_mut()
         .expect("there should only be one entity with MovementControl");
