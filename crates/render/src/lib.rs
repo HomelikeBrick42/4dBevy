@@ -1,11 +1,14 @@
 use bevy::{
     app::{App, MainScheduleOrder, Plugin, PostUpdate},
-    ecs::{query::With, resource::Resource, schedule::ScheduleLabel, system::ResMut},
+    ecs::{
+        entity::Entity, event::EventReader, query::With, resource::Resource,
+        schedule::ScheduleLabel, system::ResMut,
+    },
     log::info,
-    window::{PrimaryWindow, RawHandleWrapperHolder},
+    window::{PrimaryWindow, RawHandleWrapperHolder, WindowResized},
 };
 use camera::GpuCamera;
-use std::{cell::Cell, rc::Rc};
+use std::{cell::Cell, num::NonZeroU64, rc::Rc};
 
 mod camera;
 
@@ -24,10 +27,14 @@ struct RenderInitState {
 #[derive(Resource)]
 pub struct RenderState {
     pub instance: wgpu::Instance,
+    pub primary_window_entity: Entity,
     pub surface: wgpu::Surface<'static>,
+    pub surface_config: wgpu::SurfaceConfiguration,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     camera_buffer: wgpu::Buffer,
+    camera_bind_group: wgpu::BindGroup,
+    full_screen_quad_render_pipeline: wgpu::RenderPipeline,
 }
 
 pub struct RenderPlugin;
@@ -40,12 +47,12 @@ impl Plugin for RenderPlugin {
         let render_init_future = {
             let state = render_init_state.state.clone();
 
-            let primary_window = app
+            let (primary_window_entity, primary_window) = app
                 .world_mut()
-                .query_filtered::<&RawHandleWrapperHolder, With<PrimaryWindow>>()
+                .query_filtered::<(Entity, &RawHandleWrapperHolder), With<PrimaryWindow>>()
                 .single(app.world())
-                .expect("there should be a primary window")
-                .clone();
+                .expect("there should be a primary window");
+            let primary_window = primary_window.clone();
 
             async move {
                 let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
@@ -100,24 +107,108 @@ impl Plugin for RenderPlugin {
 
                 info!("Created device and queue");
 
+                let surface_config = wgpu::SurfaceConfiguration {
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    format: wgpu::TextureFormat::Bgra8Unorm,
+                    width: 1,
+                    height: 1,
+                    present_mode: wgpu::PresentMode::AutoVsync,
+                    desired_maximum_frame_latency: 2,
+                    alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                    view_formats: vec![],
+                };
+                surface.configure(&device, &surface_config);
+
                 let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
                     label: Some("Camera Buffer"),
                     size: size_of::<GpuCamera>() as _,
                     usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
                     mapped_at_creation: false,
                 });
+                let camera_bind_group_layout =
+                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                        label: Some("Camera Bind Group Layout"),
+                        entries: &[wgpu::BindGroupLayoutEntry {
+                            binding: 0,
+                            visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                            ty: wgpu::BindingType::Buffer {
+                                ty: wgpu::BufferBindingType::Uniform,
+                                has_dynamic_offset: false,
+                                min_binding_size: NonZeroU64::new(size_of::<GpuCamera>() as _),
+                            },
+                            count: None,
+                        }],
+                    });
+                let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: Some("Camera Bind Group"),
+                    layout: &camera_bind_group_layout,
+                    entries: &[wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: camera_buffer.as_entire_binding(),
+                    }],
+                });
 
-                let _shader = device.create_shader_module(wgpu::include_wgsl!(concat!(
-                    env!("OUT_DIR"),
-                    "/shaders/full_screen_quad.wgsl",
-                )));
+                let full_screen_quad_shader = device.create_shader_module(wgpu::include_wgsl!(
+                    concat!(env!("OUT_DIR"), "/shaders/full_screen_quad.wgsl",)
+                ));
+
+                let full_screen_quad_render_pipeline_layout =
+                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                        label: Some("Full Screen Quad Render Pipeline Layout"),
+                        bind_group_layouts: &[&camera_bind_group_layout],
+                        push_constant_ranges: &[],
+                    });
+                let full_screen_quad_render_pipeline =
+                    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                        label: Some("Full Screen Quad Render Pipeline"),
+                        layout: Some(&full_screen_quad_render_pipeline_layout),
+                        vertex: wgpu::VertexState {
+                            module: &full_screen_quad_shader,
+                            entry_point: Some("vertex"),
+                            compilation_options: wgpu::PipelineCompilationOptions::default(),
+                            buffers: &[],
+                        },
+                        primitive: wgpu::PrimitiveState {
+                            topology: wgpu::PrimitiveTopology::TriangleStrip,
+                            strip_index_format: None,
+                            front_face: wgpu::FrontFace::Cw,
+                            cull_mode: None,
+                            unclipped_depth: false,
+                            polygon_mode: wgpu::PolygonMode::Fill,
+                            conservative: false,
+                        },
+                        depth_stencil: None,
+                        multisample: wgpu::MultisampleState {
+                            count: 1,
+                            mask: !0,
+                            alpha_to_coverage_enabled: false,
+                        },
+                        fragment: Some(wgpu::FragmentState {
+                            module: &full_screen_quad_shader,
+                            entry_point: Some("fragment"),
+                            compilation_options: wgpu::PipelineCompilationOptions::default(),
+                            targets: &[Some(wgpu::ColorTargetState {
+                                format: surface_config.format,
+                                blend: None,
+                                write_mask: wgpu::ColorWrites::all(),
+                            })],
+                        }),
+                        multiview: None,
+                        cache: None,
+                    });
+
+                info!("Initialized renderer");
 
                 state.set(Some(RenderState {
+                    primary_window_entity,
                     instance,
                     surface,
+                    surface_config,
                     device,
                     queue,
                     camera_buffer,
+                    camera_bind_group,
+                    full_screen_quad_render_pipeline,
                 }));
             }
         };
@@ -158,6 +249,76 @@ impl Plugin for RenderPlugin {
     }
 }
 
-fn render(state: ResMut<RenderState>) {
-    _ = state;
+fn render(
+    mut state: ResMut<RenderState>,
+    mut resize_events: EventReader<WindowResized>,
+) -> bevy::ecs::error::Result {
+    let RenderState {
+        instance: _,
+        primary_window_entity,
+        ref surface,
+        ref mut surface_config,
+        ref device,
+        ref queue,
+        camera_buffer: _,
+        ref camera_bind_group,
+        ref full_screen_quad_render_pipeline,
+    } = *state;
+
+    if let Some(resize_event) = resize_events
+        .read()
+        .filter(|event| event.window == primary_window_entity)
+        .last()
+    {
+        surface_config.width = resize_event.width as _;
+        surface_config.height = resize_event.height as _;
+        surface.configure(device, surface_config);
+
+        info!(
+            "resized surface to {}, {}",
+            surface_config.width, surface_config.height
+        );
+    }
+
+    let texture = match surface.get_current_texture() {
+        Ok(texture) => texture,
+        Err(wgpu::SurfaceError::Outdated) => return Ok(()),
+        Err(wgpu::SurfaceError::Timeout) => return Ok(()),
+        r => r?,
+    };
+
+    let mut encoder = device.create_command_encoder(&wgpu::wgt::CommandEncoderDescriptor {
+        label: Some("Render Encoder"),
+    });
+
+    {
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Render Pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &texture.texture.create_view(&Default::default()),
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 1.0,
+                        g: 0.0,
+                        b: 1.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        render_pass.set_pipeline(full_screen_quad_render_pipeline);
+        render_pass.set_bind_group(0, camera_bind_group, &[]);
+        render_pass.draw(0..4, 0..1);
+    }
+
+    queue.submit(Some(encoder.finish()));
+    texture.present();
+
+    Ok(())
 }

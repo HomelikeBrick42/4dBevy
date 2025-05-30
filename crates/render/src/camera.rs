@@ -41,6 +41,7 @@ pub struct MainCamera;
 #[repr(C)]
 pub(super) struct GpuCamera {
     transform: Transform,
+    aspect: f32,
     fov: f32,
     min_ray_distance: f32,
     max_distance: f32,
@@ -55,8 +56,13 @@ pub(super) fn upload_camera(
         .single()
         .expect("there should only be one MainCamera");
 
-    if transform.is_changed() || camera.is_changed() || main_camera.is_changed() {
+    if state.is_changed()
+        || transform.is_changed()
+        || camera.is_changed()
+        || main_camera.is_changed()
+    {
         let transform = transform.0;
+        let aspect = state.surface_config.width as f32 / state.surface_config.height as f32;
         let Camera {
             fov,
             min_ray_distance,
@@ -65,6 +71,7 @@ pub(super) fn upload_camera(
         } = *camera;
         let gpu_camera = GpuCamera {
             transform,
+            aspect,
             fov,
             min_ray_distance,
             max_distance,

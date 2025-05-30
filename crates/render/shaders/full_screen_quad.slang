@@ -1,5 +1,8 @@
 import include.camera;
 
+[vk::binding(0, 0)]
+ConstantBuffer<Camera, Std430DataLayout> camera;
+
 struct VertexOutput
 {
     float4 clip_position : SV_Position;
@@ -28,6 +31,6 @@ VertexOutput vertex(uint vertex_index: SV_VertexID)
 FragmentOutput fragment(VertexOutput in)
 {
     var out : FragmentOutput;
-    out.color = float4(0.0, 0.0, 0.0, 1.0);
+    out.color = float4(in.uv * float2(camera.aspect, 1.0), 0.0, 1.0);
     return out;
 }
