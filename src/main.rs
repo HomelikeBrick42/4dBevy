@@ -6,12 +6,14 @@ use bevy::{
         DiagnosticsPlugin, DiagnosticsStore, FrameCountPlugin, FrameTimeDiagnosticsPlugin,
     },
     ecs::{
+        component::Component,
         event::EventReader,
-        system::{Commands, Res},
+        query::With,
+        system::{Commands, Query, Res},
     },
     input::{InputPlugin, keyboard::KeyboardInput},
     log::{LogPlugin, info},
-    time::TimePlugin,
+    time::{Time, TimePlugin},
     window::WindowPlugin,
     winit::WinitPlugin,
 };
@@ -39,7 +41,7 @@ fn main() -> AppExit {
         RenderPlugin,
     ))
     .add_systems(Startup, setup)
-    .add_systems(Update, print_key_presses);
+    .add_systems(Update, (print_key_presses, rotate_y));
 
     if PRINT_FPS {
         app.add_plugins(FrameTimeDiagnosticsPlugin::default())
@@ -49,12 +51,25 @@ fn main() -> AppExit {
     app.run()
 }
 
+#[derive(Component)]
+struct RotateXY;
+
 fn setup(mut commands: Commands) {
     commands.spawn((
         Transform::translation(-3.0, 0.0, 0.0, 0.0),
         Camera::default(),
         MainCamera,
+        RotateXY,
     ));
+}
+
+fn rotate_y(time: Res<Time>, mut transforms: Query<&mut Transform, With<RotateXY>>) {
+    transforms.par_iter_mut().for_each(|mut transform| {
+        let transform = &mut *transform;
+        *transform = transform.then(Transform::rotation_xy(
+            time.delta_secs() * core::f32::consts::TAU,
+        ));
+    })
 }
 
 fn print_diagnostics(d: Res<DiagnosticsStore>) {

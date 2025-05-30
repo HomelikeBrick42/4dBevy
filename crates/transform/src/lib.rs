@@ -30,18 +30,24 @@ impl Plugin for TransformPlugin {
         app.add_systems(
             PostStartup,
             (
-                flag_orphans.before(compute_global_transform_parents),
-                compute_global_transform_children,
+                (normalise_transforms, flag_orphans),
+                (
+                    compute_global_transform_parents,
+                    compute_global_transform_children,
+                ),
             )
-                .after(normalise_transforms),
+                .chain(),
         )
         .add_systems(
             PostUpdate,
             (
-                flag_orphans.before(compute_global_transform_parents),
-                compute_global_transform_children,
+                (normalise_transforms, flag_orphans),
+                (
+                    compute_global_transform_parents,
+                    compute_global_transform_children,
+                ),
             )
-                .after(normalise_transforms),
+                .chain(),
         );
     }
 }
@@ -113,7 +119,7 @@ fn compute_global_transform_children(
             }
 
             if changed {
-                *global_transform = GlobalTransform(computed_transform);
+                *global_transform = GlobalTransform(computed_transform.normalised());
             }
         })
 }

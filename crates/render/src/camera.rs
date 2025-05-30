@@ -15,7 +15,6 @@ use transform::{GlobalTransform, Transform};
 #[reflect(Default, Clone)]
 #[require(Transform, GlobalTransform)]
 pub struct Camera {
-    pub fov: f32,
     pub min_ray_distance: f32,
     pub max_distance: f32,
     pub max_bounces: u32,
@@ -24,7 +23,6 @@ pub struct Camera {
 impl Default for Camera {
     fn default() -> Self {
         Self {
-            fov: 90.0,
             min_ray_distance: 0.01,
             max_distance: 1000.0,
             max_bounces: 4,
@@ -42,7 +40,6 @@ pub struct MainCamera;
 pub(super) struct GpuCamera {
     transform: Transform,
     aspect: f32,
-    fov: f32,
     min_ray_distance: f32,
     max_distance: f32,
     max_bounces: u32,
@@ -64,7 +61,6 @@ pub(super) fn upload_camera(
         let transform = transform.0;
         let aspect = state.surface_config.width as f32 / state.surface_config.height as f32;
         let Camera {
-            fov,
             min_ray_distance,
             max_distance,
             max_bounces,
@@ -72,7 +68,6 @@ pub(super) fn upload_camera(
         let gpu_camera = GpuCamera {
             transform,
             aspect,
-            fov,
             min_ray_distance,
             max_distance,
             max_bounces,
