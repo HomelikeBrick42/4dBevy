@@ -124,10 +124,7 @@ impl Plugin for RenderPlugin {
     }
 
     fn ready(&self, app: &App) -> bool {
-        let init_resource = app
-            .world()
-            .get_non_send_resource::<RenderInitState>()
-            .unwrap();
+        let init_resource = app.world().non_send_resource::<RenderInitState>();
         let init_state = init_resource.state.take();
         let finished = init_state.is_some();
         init_resource.state.set(init_state);
@@ -141,7 +138,7 @@ impl Plugin for RenderPlugin {
             .unwrap()
             .state
             .take()
-            .unwrap();
+            .expect("if RenderPlugin::ready returned true then RenderState has been created");
         app.insert_resource(render_state);
     }
 }
