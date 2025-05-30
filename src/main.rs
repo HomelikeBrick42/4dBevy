@@ -6,6 +6,7 @@ use bevy::{
         DiagnosticsPlugin, DiagnosticsStore, FrameCountPlugin, FrameTimeDiagnosticsPlugin,
     },
     ecs::{
+        change_detection::DetectChanges,
         component::Component,
         event::EventReader,
         query::With,
@@ -22,7 +23,7 @@ use bevy::{
     winit::WinitPlugin,
 };
 use render::{Camera, MainCamera, RenderPlugin};
-use transform::{Transform, TransformPlugin};
+use transform::{Rotor, Transform, TransformPlugin};
 
 const PRINT_FPS: bool = false;
 
@@ -55,15 +56,18 @@ fn main() -> AppExit {
     app.run()
 }
 
-#[derive(Component)]
-pub struct MovementControl;
+#[derive(Component, Default)]
+pub struct MovementControl {
+    main_transform: Transform,
+    xy_rotation: Rotor,
+}
 
 fn setup(mut commands: Commands) {
     commands.spawn((
         Transform::translation(-3.0, 0.0, 0.0, 0.0),
         Camera::default(),
         MainCamera,
-        MovementControl,
+        MovementControl::default(),
     ));
 }
 
@@ -94,9 +98,9 @@ fn movement_controls(
     keys: Res<ButtonInput<KeyCode>>,
     mouse_buttons: Res<ButtonInput<MouseButton>>,
     mut mouse: EventReader<MouseMotion>,
-    mut transform: Query<&mut Transform, With<MovementControl>>,
+    mut transform: Query<(&mut Transform, &mut MovementControl)>,
 ) {
-    let mut transform = transform
+    let (mut out_transform, mut movement_control) = transform
         .single_mut()
         .expect("there should only be one entity with MovementControl");
 
@@ -105,22 +109,26 @@ fn movement_controls(
         for event in mouse.read() {
             if mouse_buttons.pressed(MouseButton::Left) {
                 if event.delta.x != 0.0 {
-                    *transform =
-                        transform.then(Transform::rotation_xz(event.delta.x * MOUSE_SENSITIVITY));
+                    movement_control.main_transform = movement_control
+                        .main_transform
+                        .then(Transform::rotation_xz(event.delta.x * MOUSE_SENSITIVITY));
                 }
                 if event.delta.y != 0.0 {
-                    *transform =
-                        transform.then(Transform::rotation_xy(-event.delta.y * MOUSE_SENSITIVITY));
+                    movement_control.xy_rotation = movement_control
+                        .xy_rotation
+                        .then(Rotor::rotation_xy(-event.delta.y * MOUSE_SENSITIVITY));
                 }
             }
             if mouse_buttons.pressed(MouseButton::Right) {
                 if event.delta.x != 0.0 {
-                    *transform =
-                        transform.then(Transform::rotation_xw(event.delta.x * MOUSE_SENSITIVITY));
+                    movement_control.main_transform = movement_control
+                        .main_transform
+                        .then(Transform::rotation_xw(event.delta.x * MOUSE_SENSITIVITY));
                 }
                 if event.delta.y != 0.0 {
-                    *transform =
-                        transform.then(Transform::rotation_zw(-event.delta.y * MOUSE_SENSITIVITY));
+                    movement_control.main_transform = movement_control
+                        .main_transform
+                        .then(Transform::rotation_zw(-event.delta.y * MOUSE_SENSITIVITY));
                 }
             }
         }
@@ -155,13 +163,20 @@ fn movement_controls(
             w -= 1.0;
         }
         if x != 0.0 && y != 0.0 && z != 0.0 && w != 0.0 {
-            *transform = transform.then(Transform::translation(
-                x * MOVEMENT_SPEED * dt,
-                y * MOVEMENT_SPEED * dt,
-                z * MOVEMENT_SPEED * dt,
-                w * MOVEMENT_SPEED * dt,
-            ));
+            movement_control.main_transform =
+                movement_control.main_transform.then(Transform::translation(
+                    x * MOVEMENT_SPEED * dt,
+                    y * MOVEMENT_SPEED * dt,
+                    z * MOVEMENT_SPEED * dt,
+                    w * MOVEMENT_SPEED * dt,
+                ));
         }
+    }
+
+    if movement_control.is_changed() {
+        *out_transform = movement_control
+            .main_transform
+            .then(movement_control.xy_rotation.into());
     }
 }
 
