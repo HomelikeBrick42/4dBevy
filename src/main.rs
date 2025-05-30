@@ -11,10 +11,14 @@ use bevy::{
         query::With,
         system::{Commands, Query, Res},
     },
-    input::{InputPlugin, keyboard::KeyboardInput},
+    input::{
+        ButtonInput, InputPlugin,
+        keyboard::KeyCode,
+        mouse::{MouseButton, MouseMotion},
+    },
     log::{LogPlugin, info},
     time::{Time, TimePlugin},
-    window::WindowPlugin,
+    window::{CursorGrabMode, PrimaryWindow, Window, WindowPlugin},
     winit::WinitPlugin,
 };
 use render::{Camera, MainCamera, RenderPlugin};
@@ -41,7 +45,7 @@ fn main() -> AppExit {
         RenderPlugin,
     ))
     .add_systems(Startup, setup)
-    .add_systems(Update, (print_key_presses, rotate_y));
+    .add_systems(Update, movement_controls);
 
     if PRINT_FPS {
         app.add_plugins(FrameTimeDiagnosticsPlugin::default())
@@ -52,34 +56,115 @@ fn main() -> AppExit {
 }
 
 #[derive(Component)]
-struct RotateXY;
+pub struct MovementControl;
 
 fn setup(mut commands: Commands) {
     commands.spawn((
         Transform::translation(-3.0, 0.0, 0.0, 0.0),
         Camera::default(),
         MainCamera,
-        RotateXY,
+        MovementControl,
     ));
 }
 
-fn rotate_y(time: Res<Time>, mut transforms: Query<&mut Transform, With<RotateXY>>) {
-    transforms.par_iter_mut().for_each(|mut transform| {
-        let transform = &mut *transform;
-        *transform = transform.then(Transform::rotation_xy(
-            time.delta_secs() * core::f32::consts::TAU,
-        ));
-    })
+fn movement_controls(
+    time: Res<Time>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse_buttons: Res<ButtonInput<MouseButton>>,
+    mut mouse: EventReader<MouseMotion>,
+    mut transform: Query<&mut Transform, With<MovementControl>>,
+    mut primary_window: Query<&mut Window, With<PrimaryWindow>>,
+) {
+    {
+        let mut primary_window = primary_window
+            .single_mut()
+            .expect("there should only be one primary window");
+        if mouse_buttons.just_pressed(MouseButton::Left)
+            || mouse_buttons.just_pressed(MouseButton::Right)
+        {
+            primary_window.cursor_options.visible = false;
+            primary_window.cursor_options.grab_mode = CursorGrabMode::Locked;
+        }
+        if !primary_window.cursor_options.visible
+            && !mouse_buttons.pressed(MouseButton::Left)
+            && !mouse_buttons.pressed(MouseButton::Right)
+        {
+            primary_window.cursor_options.visible = true;
+            primary_window.cursor_options.grab_mode = CursorGrabMode::None;
+        }
+    }
+
+    let mut transform = transform
+        .single_mut()
+        .expect("there should only be one entity with MovementControl");
+
+    {
+        const MOUSE_SENSITIVITY: f32 = 0.01;
+        for event in mouse.read() {
+            if mouse_buttons.pressed(MouseButton::Left) {
+                if event.delta.x != 0.0 {
+                    *transform =
+                        transform.then(Transform::rotation_xz(event.delta.x * MOUSE_SENSITIVITY));
+                }
+                if event.delta.y != 0.0 {
+                    *transform =
+                        transform.then(Transform::rotation_xy(-event.delta.y * MOUSE_SENSITIVITY));
+                }
+            }
+            if mouse_buttons.pressed(MouseButton::Right) {
+                if event.delta.x != 0.0 {
+                    *transform =
+                        transform.then(Transform::rotation_xw(event.delta.x * MOUSE_SENSITIVITY));
+                }
+                if event.delta.y != 0.0 {
+                    *transform =
+                        transform.then(Transform::rotation_zw(-event.delta.y * MOUSE_SENSITIVITY));
+                }
+            }
+        }
+    }
+
+    {
+        const MOVEMENT_SPEED: f32 = 1.0;
+        let dt = time.delta_secs();
+        let (mut x, mut y, mut z, mut w) = (0.0, 0.0, 0.0, 0.0);
+        if keys.pressed(KeyCode::KeyW) {
+            x += 1.0;
+        }
+        if keys.pressed(KeyCode::KeyS) {
+            x -= 1.0;
+        }
+        if keys.pressed(KeyCode::KeyA) {
+            y -= 1.0;
+        }
+        if keys.pressed(KeyCode::KeyD) {
+            y += 1.0;
+        }
+        if keys.pressed(KeyCode::KeyQ) {
+            z -= 1.0;
+        }
+        if keys.pressed(KeyCode::KeyE) {
+            z += 1.0;
+        }
+        if keys.pressed(KeyCode::KeyR) {
+            w += 1.0;
+        }
+        if keys.pressed(KeyCode::KeyF) {
+            w -= 1.0;
+        }
+        if x != 0.0 && y != 0.0 && z != 0.0 && w != 0.0 {
+            *transform = transform.then(Transform::translation(
+                x * MOVEMENT_SPEED * dt,
+                y * MOVEMENT_SPEED * dt,
+                z * MOVEMENT_SPEED * dt,
+                w * MOVEMENT_SPEED * dt,
+            ));
+        }
+    }
 }
 
 fn print_diagnostics(d: Res<DiagnosticsStore>) {
     if let Some(fps) = d.get_measurement(&FrameTimeDiagnosticsPlugin::FPS) {
         info!("FPS: {}", fps.value);
-    }
-}
-
-fn print_key_presses(mut inputs: EventReader<KeyboardInput>) {
-    for input in inputs.read() {
-        info!("{:?} {:?}", input.key_code, input.state);
     }
 }
