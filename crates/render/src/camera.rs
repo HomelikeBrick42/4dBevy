@@ -1,3 +1,4 @@
+use crate::RenderState;
 use bevy::{
     ecs::{
         change_detection::DetectChanges,
@@ -9,8 +10,6 @@ use bevy::{
 };
 use bytemuck::{Pod, Zeroable};
 use transform::{GlobalTransform, Transform};
-
-use crate::RenderState;
 
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Default, Clone)]

@@ -107,6 +107,11 @@ impl Plugin for RenderPlugin {
                     mapped_at_creation: false,
                 });
 
+                let _shader = device.create_shader_module(wgpu::include_wgsl!(concat!(
+                    env!("OUT_DIR"),
+                    "/shaders/full_screen_quad.wgsl",
+                )));
+
                 state.set(Some(RenderState {
                     instance,
                     surface,
