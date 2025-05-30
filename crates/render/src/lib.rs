@@ -1,25 +1,144 @@
 use bevy::{
-    app::{MainScheduleOrder, Plugin, PostUpdate},
-    ecs::schedule::ScheduleLabel,
+    app::{App, MainScheduleOrder, Plugin, PostUpdate},
+    ecs::{query::With, resource::Resource, schedule::ScheduleLabel, system::ResMut},
     log::info,
+    window::{PrimaryWindow, RawHandleWrapperHolder},
 };
+use std::{cell::Cell, rc::Rc};
 
 #[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 struct Render;
 
+struct RenderInitState {
+    state: Rc<Cell<Option<RenderState>>>,
+}
+
+#[derive(Resource)]
+struct RenderState {
+    #[expect(unused)]
+    instance: wgpu::Instance,
+    #[expect(unused)]
+    surface: wgpu::Surface<'static>,
+    #[expect(unused)]
+    device: wgpu::Device,
+    #[expect(unused)]
+    queue: wgpu::Queue,
+}
+
 pub struct RenderPlugin;
 
 impl Plugin for RenderPlugin {
-    fn build(&self, app: &mut bevy::app::App) {
+    fn build(&self, app: &mut App) {
+        let render_init_state = RenderInitState {
+            state: Rc::new(Cell::new(None)),
+        };
+        let render_init_future = {
+            let state = render_init_state.state.clone();
+
+            let primary_window = app
+                .world_mut()
+                .query_filtered::<&RawHandleWrapperHolder, With<PrimaryWindow>>()
+                .single(app.world())
+                .expect("there should be a primary window")
+                .clone();
+
+            async move {
+                let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+                    backends: wgpu::Backends::all(),
+                    flags: wgpu::InstanceFlags::from_env_or_default(),
+                    backend_options: wgpu::BackendOptions::from_env_or_default(),
+                });
+
+                let surface = {
+                    // this is horrible but just do an async spin loop until the primary window is available, this seems to work
+                    let handle = loop {
+                        let handle = primary_window.0.lock().unwrap();
+                        if handle.is_some() {
+                            break handle;
+                        }
+                        drop(handle);
+                        bevy::tasks::futures_lite::future::yield_now().await;
+                    };
+                    let handle = handle.as_ref().unwrap();
+
+                    // Safety: this async task is spawned on the main thread with spawn_local, and bevy should only be initialised on the main thread
+                    let handle = unsafe { handle.get_handle() };
+
+                    instance
+                        .create_surface(handle)
+                        .expect("wgpu surface should be created")
+                };
+
+                info!("Created the surface");
+
+                let adapter = instance
+                    .request_adapter(&wgpu::RequestAdapterOptions {
+                        power_preference: wgpu::PowerPreference::HighPerformance,
+                        force_fallback_adapter: false,
+                        compatible_surface: Some(&surface),
+                    })
+                    .await
+                    .expect("wgpu adapter should be found");
+
+                info!("Using adapter {:?}", adapter.get_info());
+
+                let (device, queue) = adapter
+                    .request_device(&wgpu::DeviceDescriptor {
+                        label: Some("Device"),
+                        required_features: wgpu::Features::empty(),
+                        required_limits: wgpu::Limits::default(),
+                        memory_hints: wgpu::MemoryHints::Performance,
+                        trace: wgpu::Trace::Off,
+                    })
+                    .await
+                    .expect("wgpu device and queue should be created");
+
+                info!("Created device and queue");
+
+                state.set(Some(RenderState {
+                    instance,
+                    surface,
+                    device,
+                    queue,
+                }));
+            }
+        };
+        bevy::tasks::IoTaskPool::get()
+            .spawn_local(render_init_future)
+            .detach();
+
+        app.insert_non_send_resource(render_init_state);
+
         app.init_schedule(Render);
         app.world_mut()
             .resource_mut::<MainScheduleOrder>()
             .insert_after(PostUpdate, Render);
-
         app.add_systems(Render, render);
+    }
+
+    fn ready(&self, app: &App) -> bool {
+        let init_resource = app
+            .world()
+            .get_non_send_resource::<RenderInitState>()
+            .unwrap();
+        let init_state = init_resource.state.take();
+        let finished = init_state.is_some();
+        init_resource.state.set(init_state);
+        finished
+    }
+
+    fn finish(&self, app: &mut App) {
+        let render_state = app
+            .world_mut()
+            .remove_non_send_resource::<RenderInitState>()
+            .unwrap()
+            .state
+            .take()
+            .unwrap();
+        app.insert_resource(render_state);
     }
 }
 
-fn render() {
-    info!("rendering");
+fn render(state: ResMut<RenderState>) {
+    _ = state;
 }
