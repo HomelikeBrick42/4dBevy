@@ -1,5 +1,3 @@
-use std::num::NonZeroU64;
-
 use bevy::{
     ecs::{
         change_detection::DetectChanges,
@@ -7,10 +5,10 @@ use bevy::{
         system::{Query, Res},
         world::Ref,
     },
-    log::info,
     reflect::{Reflect, prelude::ReflectDefault},
 };
 use bytemuck::{Pod, Zeroable};
+use std::num::NonZeroU64;
 use transform::{GlobalTransform, Transform};
 
 use crate::RenderState;
