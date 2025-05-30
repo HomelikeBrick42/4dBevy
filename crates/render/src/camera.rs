@@ -8,7 +8,6 @@ use bevy::{
     reflect::{Reflect, prelude::ReflectDefault},
 };
 use bytemuck::{Pod, Zeroable};
-use std::num::NonZeroU64;
 use transform::{GlobalTransform, Transform};
 
 use crate::RenderState;
