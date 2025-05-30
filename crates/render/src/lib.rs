@@ -6,23 +6,26 @@ use bevy::{
 };
 use std::{cell::Cell, rc::Rc};
 
+mod camera;
+
+pub use camera::{Camera, MainCamera};
+
 #[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-struct Render;
+pub struct PreRender;
+
+#[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Render;
 
 struct RenderInitState {
     state: Rc<Cell<Option<RenderState>>>,
 }
 
 #[derive(Resource)]
-struct RenderState {
-    #[expect(unused)]
-    instance: wgpu::Instance,
-    #[expect(unused)]
-    surface: wgpu::Surface<'static>,
-    #[expect(unused)]
-    device: wgpu::Device,
-    #[expect(unused)]
-    queue: wgpu::Queue,
+pub struct RenderState {
+    pub instance: wgpu::Instance,
+    pub surface: wgpu::Surface<'static>,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
 }
 
 pub struct RenderPlugin;
@@ -109,11 +112,15 @@ impl Plugin for RenderPlugin {
 
         app.insert_non_send_resource(render_init_state);
 
-        app.init_schedule(Render);
-        app.world_mut()
-            .resource_mut::<MainScheduleOrder>()
-            .insert_after(PostUpdate, Render);
-        app.add_systems(Render, render);
+        app.init_schedule(PreRender).init_schedule(Render);
+        let mut main_schedule = app.world_mut().resource_mut::<MainScheduleOrder>();
+        main_schedule.insert_after(PostUpdate, PreRender);
+        main_schedule.insert_after(PreRender, Render);
+
+        app.register_type::<Camera>()
+            .register_type::<MainCamera>()
+            .add_systems(PreRender, camera::upload_camera)
+            .add_systems(Render, render);
     }
 
     fn ready(&self, app: &App) -> bool {

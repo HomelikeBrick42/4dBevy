@@ -15,8 +15,8 @@ use bevy::{
     window::WindowPlugin,
     winit::WinitPlugin,
 };
-use render::RenderPlugin;
-use transform::TransformPlugin;
+use render::{Camera, MainCamera, RenderPlugin};
+use transform::{Transform, TransformPlugin};
 
 const PRINT_FPS: bool = false;
 
@@ -49,8 +49,12 @@ fn main() -> AppExit {
     app.run()
 }
 
-fn setup(commands: Commands) {
-    _ = commands;
+fn setup(mut commands: Commands) {
+    commands.spawn((
+        Transform::translation(-3.0, 0.0, 0.0, 0.0),
+        Camera::default(),
+        MainCamera,
+    ));
 }
 
 fn print_diagnostics(d: Res<DiagnosticsStore>) {
