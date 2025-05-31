@@ -3,7 +3,7 @@ use bevy::{
     app::{App, Plugin},
     ecs::{
         change_detection::DetectChanges,
-        query::{Changed, Or},
+        query::Changed,
         resource::Resource,
         system::{Query, Res, ResMut},
         world::Ref,
@@ -304,7 +304,7 @@ fn camera_upload(
 fn material_upload(
     state: Res<RenderState>,
     mut ray_tracing: ResMut<RayTracing>,
-    materials: Query<(&Material, &MaterialId), Or<(Changed<Material>, Changed<MaterialId>)>>,
+    materials: Query<(&Material, &MaterialId), Changed<MaterialId>>,
 ) {
     let max_id = materials
         .iter()
