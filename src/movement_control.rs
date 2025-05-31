@@ -80,13 +80,13 @@ pub fn movement_controls(
                 if event.delta.x != 0.0 {
                     movement_control.main_transform = movement_control
                         .main_transform
-                        .then(Transform::rotation_xw(event.delta.x * MOUSE_SENSITIVITY));
+                        .then(Transform::rotation_zw(event.delta.x * MOUSE_SENSITIVITY));
                     moved_or_rotated = true;
                 }
                 if event.delta.y != 0.0 {
                     movement_control.main_transform = movement_control
                         .main_transform
-                        .then(Transform::rotation_zw(-event.delta.y * MOUSE_SENSITIVITY));
+                        .then(Transform::rotation_xw(-event.delta.y * MOUSE_SENSITIVITY));
                     moved_or_rotated = true;
                 }
             }
