@@ -3,14 +3,16 @@ use bevy::{
     app::{App, Plugin},
     ecs::{
         change_detection::DetectChanges,
-        query::Changed,
+        entity::Entity,
+        query::{Added, Changed},
+        removal_detection::RemovedComponents,
         resource::Resource,
         system::{Query, Res, ResMut},
         world::Ref,
     },
 };
 use bytemuck::{Pod, Zeroable};
-use std::num::NonZero;
+use std::{mem::offset_of, num::NonZero};
 use transform::GlobalTransform;
 use wgpu::util::DeviceExt;
 
@@ -47,7 +49,10 @@ pub(super) struct RayTracingPlugin;
 impl Plugin for RayTracingPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<MaterialAllocator>()
-            .add_systems(PreRender, (camera_upload, material_upload))
+            .add_systems(
+                PreRender,
+                (camera_upload, material_upload, hyper_spheres_upload),
+            )
             .add_systems(Render, ray_trace);
     }
 
@@ -115,18 +120,10 @@ impl Plugin for RayTracingPlugin {
             ],
         });
 
-        let materials_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Materials Buffer"),
-            size: size_of::<GpuMaterial>() as _,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
-        let hyper_spheres_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Hyper Spheres Buffer"),
-            size: size_of::<GpuHyperSphere>() as _,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
+        let materials_buffer =
+            create_materials_buffer(&state.device, size_of::<GpuMaterial>() as _);
+        let hyper_spheres_buffer =
+            create_hyper_spheres_buffer(&state.device, size_of::<GpuHyperSphere>() as _);
         let objects_bind_group_layout =
             state
                 .device
@@ -232,6 +229,28 @@ impl Plugin for RayTracingPlugin {
     }
 }
 
+fn create_materials_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Materials Buffer"),
+        size,
+        usage: wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    })
+}
+
+fn create_hyper_spheres_buffer(device: &wgpu::Device, size: u64) -> wgpu::Buffer {
+    device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some("Hyper Spheres Buffer"),
+        size,
+        usage: wgpu::BufferUsages::COPY_DST
+            | wgpu::BufferUsages::COPY_SRC
+            | wgpu::BufferUsages::STORAGE,
+        mapped_at_creation: false,
+    })
+}
+
 fn create_objects_bind_group(
     device: &wgpu::Device,
     objects_bind_group_layout: &wgpu::BindGroupLayout,
@@ -316,12 +335,7 @@ fn material_upload(
         (max_id as wgpu::BufferAddress + 1) * size_of::<GpuMaterial>() as wgpu::BufferAddress;
     let old_size = ray_tracing.materials_buffer.size();
     if required_space > old_size {
-        let new_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Materials Buffer"),
-            size: required_space,
-            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-            mapped_at_creation: false,
-        });
+        let new_buffer = create_materials_buffer(&state.device, required_space);
 
         let mut encoder = state
             .device
@@ -348,6 +362,98 @@ fn material_upload(
             &ray_tracing.materials_buffer,
             offset,
             bytemuck::bytes_of(&gpu_material),
+        );
+    }
+}
+
+fn hyper_spheres_upload(
+    state: Res<RenderState>,
+    mut ray_tracing: ResMut<RayTracing>,
+    hyper_spheres_: Query<(Ref<GlobalTransform>, Ref<MaterialId>, Ref<HyperSphere>)>,
+    added_hyper_spheres: Query<(), Added<HyperSphere>>,
+    mut removed_hyper_spheres: RemovedComponents<HyperSphere>,
+) {
+    let was_removed = !removed_hyper_spheres.is_empty();
+    if was_removed {
+        removed_hyper_spheres.clear();
+    }
+
+    let was_added = !added_hyper_spheres.is_empty();
+
+    let hyper_spheres = hyper_spheres_.iter().sort::<Entity>();
+    let mut hyper_sphere_count = 0;
+    if was_added {
+        hyper_sphere_count = hyper_spheres_.iter().count() as _;
+
+        let required_space = hyper_sphere_count as wgpu::BufferAddress
+            * size_of::<GpuHyperSphere>() as wgpu::BufferAddress;
+        let old_size = ray_tracing.hyper_spheres_buffer.size();
+        if required_space > old_size {
+            ray_tracing.hyper_spheres_buffer =
+                create_hyper_spheres_buffer(&state.device, required_space);
+            ray_tracing.objects_bind_group = create_objects_bind_group(
+                &state.device,
+                &ray_tracing.objects_bind_group_layout,
+                &ray_tracing.materials_buffer,
+                &ray_tracing.hyper_spheres_buffer,
+            );
+        }
+
+        let mut buffer = state
+            .queue
+            .write_buffer_with(
+                &ray_tracing.hyper_spheres_buffer,
+                0,
+                NonZero::new(required_space).unwrap(),
+            )
+            .unwrap();
+        for (index, (transform, material, hyper_sphere)) in hyper_spheres.enumerate() {
+            let offset = index * size_of::<GpuHyperSphere>();
+            let position = transform.0.transform((0.0, 0.0, 0.0, 0.0)).into();
+            let material_id = material.0;
+            let HyperSphere { radius } = *hyper_sphere;
+            let gpu_hyper_sphere = GpuHyperSphere {
+                position,
+                material_id,
+                radius,
+                _padding: Default::default(),
+            };
+            buffer[offset..][..size_of::<GpuHyperSphere>()]
+                .copy_from_slice(bytemuck::bytes_of(&gpu_hyper_sphere));
+        }
+    } else {
+        for (index, (transform, material, hyper_sphere)) in hyper_spheres.enumerate() {
+            if was_removed
+                || transform.is_changed()
+                || material.is_changed()
+                || hyper_sphere.is_changed()
+            {
+                let offset = index as wgpu::BufferAddress
+                    * size_of::<GpuHyperSphere>() as wgpu::BufferAddress;
+                let position = transform.0.transform((0.0, 0.0, 0.0, 0.0)).into();
+                let material_id = material.0;
+                let HyperSphere { radius } = *hyper_sphere;
+                let gpu_hyper_sphere = GpuHyperSphere {
+                    position,
+                    material_id,
+                    radius,
+                    _padding: Default::default(),
+                };
+                state.queue.write_buffer(
+                    &ray_tracing.hyper_spheres_buffer,
+                    offset,
+                    bytemuck::bytes_of(&gpu_hyper_sphere),
+                );
+            }
+            hyper_sphere_count += 1;
+        }
+    }
+
+    if was_added || was_removed {
+        state.queue.write_buffer(
+            &ray_tracing.objects_info_buffer,
+            offset_of!(GpuObjectsInfo, hyper_spheres_count) as _,
+            &u32::to_ne_bytes(hyper_sphere_count),
         );
     }
 }
