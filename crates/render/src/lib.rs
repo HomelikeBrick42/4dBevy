@@ -18,7 +18,7 @@ mod hyper_sphere;
 mod material;
 
 pub use camera::{Camera, MainCamera};
-pub use hyper_sphere::Hypersphere;
+pub use hyper_sphere::HyperSphere;
 pub use material::{Color, Material};
 
 #[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -320,7 +320,7 @@ impl Plugin for RenderPlugin {
         app.register_type::<Camera>()
             .register_type::<MainCamera>()
             .register_type::<Material>()
-            .register_type::<Hypersphere>()
+            .register_type::<HyperSphere>()
             .add_systems(
                 PreRender,
                 (camera::upload_camera, hyper_sphere::upload_hyper_spheres),

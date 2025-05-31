@@ -22,7 +22,7 @@ use bevy::{
     window::{CursorGrabMode, PrimaryWindow, Window, WindowPlugin},
     winit::WinitPlugin,
 };
-use render::{Camera, Color, Hypersphere, MainCamera, Material, RenderPlugin};
+use render::{Camera, Color, HyperSphere, MainCamera, Material, RenderPlugin};
 use transform::{Rotor, Transform, TransformPlugin};
 
 const PRINT_FPS: bool = false;
@@ -73,7 +73,7 @@ fn setup(mut commands: Commands) {
     ));
     commands.spawn((
         Transform::translation(0.0, 0.0, 0.0, 0.0),
-        Hypersphere { radius: 1.0 },
+        HyperSphere { radius: 1.0 },
         Material {
             color: Color {
                 red: 0.8,

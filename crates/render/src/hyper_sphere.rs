@@ -16,11 +16,11 @@ use transform::{GlobalTransform, Transform};
 #[derive(Component, Reflect, Debug, Clone, Copy)]
 #[reflect(Default, Clone)]
 #[require(Transform, Material)]
-pub struct Hypersphere {
+pub struct HyperSphere {
     pub radius: f32,
 }
 
-impl Default for Hypersphere {
+impl Default for HyperSphere {
     fn default() -> Self {
         Self { radius: 1.0 }
     }
@@ -36,7 +36,7 @@ pub(super) struct GpuHyperSphere {
 
 pub(super) fn upload_hyper_spheres(
     mut state: ResMut<RenderState>,
-    hyper_spheres: Query<(Ref<GlobalTransform>, Ref<Hypersphere>, Ref<Material>)>,
+    hyper_spheres: Query<(Ref<GlobalTransform>, Ref<HyperSphere>, Ref<Material>)>,
 ) {
     let mut any_changed = false;
     let mut count = 0u32;
@@ -96,7 +96,7 @@ pub(super) fn upload_hyper_spheres(
 
         for (index, (transform, hyper_sphere, material)) in hyper_spheres.iter().enumerate() {
             let transform = transform.0;
-            let Hypersphere { radius } = *hyper_sphere;
+            let HyperSphere { radius } = *hyper_sphere;
             let material = *material;
             let gpu_hyper_sphere = GpuHyperSphere {
                 transform,
