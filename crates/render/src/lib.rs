@@ -319,6 +319,8 @@ impl Plugin for RenderPlugin {
 
         app.register_type::<Camera>()
             .register_type::<MainCamera>()
+            .register_type::<Material>()
+            .register_type::<Hypersphere>()
             .add_systems(
                 PreRender,
                 (camera::upload_camera, hyper_sphere::upload_hyper_spheres),
