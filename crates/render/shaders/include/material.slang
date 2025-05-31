@@ -7,5 +7,7 @@ struct Color
 
 struct Material
 {
-    Color color;
+    Color base_color;
 }
+
+typealias MaterialId = uint;
