@@ -2,12 +2,16 @@ import include.camera;
 import include.hyper_sphere;
 import include.ray;
 import include.objects_info;
+import include.material;
 
 [vk::binding(0, 0)]
 ConstantBuffer<Camera, Std430DataLayout> camera;
 
-[vk::binding(0, 1)]
+[vk::binding(1, 0)]
 ConstantBuffer<ObjectsInfo, Std430DataLayout> objects_info;
+
+[vk::binding(0, 1)]
+StructuredBuffer<Material, Std430DataLayout> materials;
 
 [vk::binding(1, 1)]
 StructuredBuffer<HyperSphere, Std430DataLayout> hyper_spheres;
@@ -42,20 +46,15 @@ FragmentOutput fragment(VertexOutput in)
     var out : FragmentOutput;
 
     var ray : Ray;
-    ray.origin = camera.transform.transform(float4(0.0, 0.0, 0.0, 0.0));
-
-    let rotation = camera.transform.rotor_part();
-    let forward = rotation.rotate(float4(1.0, 0.0, 0.0, 0.0));
-    let right = rotation.rotate(float4(0.0, 0.0, 1.0, 0.0));
-    let up = rotation.rotate(float4(0.0, 1.0, 0.0, 0.0));
-    ray.direction = normalize(forward + right * in.uv.x * camera.aspect + up * in.uv.y);
+    ray.origin = camera.position;
+    ray.direction = normalize(camera.forward + camera.right * in.uv.x * camera.aspect + camera.up * in.uv.y);
 
     let hit = intersect_scene(ray);
     if (hit.hasValue)
     {
         let hit = hit.value;
 
-        let color_ = hit.material.color;
+        let color_ = materials[hit.material_id].base_color;
         let color = float3(color_.red, color_.green, color_.blue);
 
         var sun_ray : Ray;
@@ -95,7 +94,7 @@ Optional<Hit> intersect_scene(Ray ray)
     var hit : Optional<Hit> = none;
     for (var i = 0u; i < objects_info.hyper_sphere_count; i++)
     {
-        let maybe_hit = hyper_spheres[i].intersect(ray, camera.min_ray_distance, camera.max_distance);
+        let maybe_hit = hyper_spheres[i].intersect(ray, camera.min_distance, camera.max_distance);
         if (maybe_hit.hasValue)
             if (!hit.hasValue || maybe_hit.value.distance < hit.value.distance)
                 hit = maybe_hit;

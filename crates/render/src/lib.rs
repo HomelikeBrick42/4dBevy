@@ -1,17 +1,16 @@
 use bevy::{
     app::{App, MainScheduleOrder, Plugin, PostUpdate},
     ecs::{
-        entity::Entity,
-        event::EventReader,
-        query::With,
-        resource::Resource,
-        schedule::ScheduleLabel,
-        system::{Res, ResMut},
+        entity::Entity, event::EventReader, query::With, resource::Resource,
+        schedule::ScheduleLabel, system::ResMut,
     },
     log::info,
     window::{PrimaryWindow, RawHandleWrapperHolder, WindowResized},
 };
+use ray_tracing::RayTracingPlugin;
 use std::{cell::Cell, rc::Rc};
+
+pub mod ray_tracing;
 
 #[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PreRender;
@@ -39,7 +38,6 @@ pub struct RenderState {
 #[derive(Resource, Default)]
 pub struct Rendering {
     pub surface_texture: Option<wgpu::SurfaceTexture>,
-    pub command_buffers: Vec<wgpu::CommandBuffer>,
 }
 
 pub struct RenderPlugin;
@@ -150,6 +148,7 @@ impl Plugin for RenderPlugin {
         main_schedule.insert_after(Render, Present);
 
         app.init_resource::<Rendering>()
+            .add_plugins(RayTracingPlugin)
             .add_systems(StartRender, start_render)
             .add_systems(Present, present);
     }
@@ -215,10 +214,7 @@ fn start_render(
     Ok(())
 }
 
-fn present(state: Res<RenderState>, mut rendering: ResMut<Rendering>) {
-    state
-        .queue
-        .submit(std::mem::take(&mut rendering.command_buffers));
+fn present(mut rendering: ResMut<Rendering>) {
     if let Some(surface_texture) = rendering.surface_texture.take() {
         surface_texture.present();
     }

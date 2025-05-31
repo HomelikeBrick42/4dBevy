@@ -8,8 +8,8 @@ struct Ray
 
 struct Hit
 {
-    Material material;
-    float distance;
     float4 position;
     float4 normal;
+    float distance;
+    MaterialId material_id;
 }

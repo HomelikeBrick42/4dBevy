@@ -22,7 +22,10 @@ use bevy::{
     window::{CursorGrabMode, PrimaryWindow, Window, WindowPlugin},
     winit::WinitPlugin,
 };
-use render::RenderPlugin;
+use render::{
+    RenderPlugin,
+    ray_tracing::{Camera, Color, HyperSphere, MainCamera, Material},
+};
 use transform::{Rotor, Transform, TransformPlugin};
 
 const PRINT_FPS: bool = false;
@@ -64,10 +67,25 @@ pub struct MovementControl {
 }
 
 fn setup(mut commands: Commands) {
-    commands.spawn((MovementControl {
-        main_transform: Transform::translation(-3.0, 0.0, 0.0, 0.0),
-        xy_rotation: Rotor::IDENTITY,
-    },));
+    commands.spawn((
+        MovementControl {
+            main_transform: Transform::translation(-3.0, 0.0, 0.0, 0.0),
+            xy_rotation: Rotor::IDENTITY,
+        },
+        Camera::default(),
+        MainCamera,
+    ));
+    commands.spawn((
+        Transform::IDENTITY,
+        Material {
+            base_color: Color {
+                red: 0.8,
+                green: 0.3,
+                blue: 0.2,
+            },
+        },
+        HyperSphere { radius: 1.0 },
+    ));
 }
 
 fn handle_cursor_locking(

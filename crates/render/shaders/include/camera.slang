@@ -1,10 +1,11 @@
-import transform;
-
 struct Camera
 {
-    Transform transform;
+    float4 position;
+    float4 forward;
+    float4 right;
+    float4 up;
     float aspect;
-    float min_ray_distance;
+    float min_distance;
     float max_distance;
     uint max_bounces;
 }
