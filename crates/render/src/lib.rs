@@ -1,31 +1,26 @@
 use bevy::{
     app::{App, MainScheduleOrder, Plugin, PostUpdate},
     ecs::{
-        entity::Entity, event::EventReader, query::With, resource::Resource,
-        schedule::ScheduleLabel, system::ResMut,
+        entity::Entity,
+        event::EventReader,
+        query::With,
+        resource::Resource,
+        schedule::ScheduleLabel,
+        system::{Res, ResMut},
     },
     log::info,
     window::{PrimaryWindow, RawHandleWrapperHolder, WindowResized},
 };
-use bytemuck::{Pod, Zeroable};
-use camera::GpuCamera;
-use hyper_sphere::GpuHyperSphere;
-use std::{cell::Cell, num::NonZeroU64, rc::Rc};
-use wgpu::util::DeviceExt;
-
-mod camera;
-mod hyper_sphere;
-mod material;
-
-pub use camera::{Camera, MainCamera};
-pub use hyper_sphere::HyperSphere;
-pub use material::{Color, Material};
+use std::{cell::Cell, rc::Rc};
 
 #[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PreRender;
-
+#[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct StartRender;
 #[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Render;
+#[derive(ScheduleLabel, Debug, Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+struct Present;
 
 struct RenderInitState {
     state: Rc<Cell<Option<RenderState>>>,
@@ -39,24 +34,12 @@ pub struct RenderState {
     pub surface_config: wgpu::SurfaceConfiguration,
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
-
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
-
-    hyper_spheres_count: u32,
-    hyper_spheres_buffer: wgpu::Buffer,
-
-    objects_info_buffer: wgpu::Buffer,
-    objects_bind_group_layout: wgpu::BindGroupLayout,
-    objects_bind_group: wgpu::BindGroup,
-
-    full_screen_quad_render_pipeline: wgpu::RenderPipeline,
 }
 
-#[derive(Clone, Copy, Zeroable, Pod)]
-#[repr(C)]
-struct GpuObjectsInfo {
-    hyper_spheres_count: u32,
+#[derive(Resource, Default)]
+pub struct Rendering {
+    pub surface_texture: Option<wgpu::SurfaceTexture>,
+    pub command_buffers: Vec<wgpu::CommandBuffer>,
 }
 
 pub struct RenderPlugin;
@@ -141,147 +124,6 @@ impl Plugin for RenderPlugin {
                 };
                 surface.configure(&device, &surface_config);
 
-                let camera_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("Camera Buffer"),
-                    size: size_of::<GpuCamera>() as _,
-                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
-                    mapped_at_creation: false,
-                });
-                let camera_bind_group_layout =
-                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("Camera Bind Group Layout"),
-                        entries: &[wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Buffer {
-                                ty: wgpu::BufferBindingType::Uniform,
-                                has_dynamic_offset: false,
-                                min_binding_size: NonZeroU64::new(size_of::<GpuCamera>() as _),
-                            },
-                            count: None,
-                        }],
-                    });
-                let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("Camera Bind Group"),
-                    layout: &camera_bind_group_layout,
-                    entries: &[wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: camera_buffer.as_entire_binding(),
-                    }],
-                });
-
-                let hyper_spheres_count = 0;
-                let hyper_spheres_min_size = size_of::<GpuHyperSphere>() as wgpu::BufferAddress;
-                let hyper_spheres_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                    label: Some("HyperSpheres Buffer"),
-                    size: hyper_spheres_min_size,
-                    usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::STORAGE,
-                    mapped_at_creation: false,
-                });
-
-                let objects_info_buffer =
-                    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                        label: Some("Objects Info Buffer"),
-                        contents: bytemuck::bytes_of(&GpuObjectsInfo {
-                            hyper_spheres_count,
-                        }),
-                        usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
-                    });
-                let objects_bind_group_layout =
-                    device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                        label: Some("HyperSpheres Bind Group Layout"),
-                        entries: &[
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 0,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Buffer {
-                                    ty: wgpu::BufferBindingType::Uniform,
-                                    has_dynamic_offset: false,
-                                    min_binding_size: NonZeroU64::new(
-                                        size_of::<GpuObjectsInfo>() as _
-                                    ),
-                                },
-                                count: None,
-                            },
-                            wgpu::BindGroupLayoutEntry {
-                                binding: 1,
-                                visibility: wgpu::ShaderStages::FRAGMENT,
-                                ty: wgpu::BindingType::Buffer {
-                                    ty: wgpu::BufferBindingType::Storage { read_only: true },
-                                    has_dynamic_offset: false,
-                                    min_binding_size: NonZeroU64::new(hyper_spheres_min_size),
-                                },
-                                count: None,
-                            },
-                        ],
-                    });
-                let objects_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                    label: Some("HyperSpheres Bind Group"),
-                    layout: &objects_bind_group_layout,
-                    entries: &[
-                        wgpu::BindGroupEntry {
-                            binding: 0,
-                            resource: objects_info_buffer.as_entire_binding(),
-                        },
-                        wgpu::BindGroupEntry {
-                            binding: 1,
-                            resource: hyper_spheres_buffer.as_entire_binding(),
-                        },
-                    ],
-                });
-
-                let full_screen_quad_shader = device.create_shader_module(wgpu::include_wgsl!(
-                    concat!(env!("OUT_DIR"), "/shaders/full_screen_quad.wgsl",)
-                ));
-
-                let full_screen_quad_render_pipeline_layout =
-                    device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                        label: Some("Full Screen Quad Render Pipeline Layout"),
-                        bind_group_layouts: &[
-                            &camera_bind_group_layout,
-                            &objects_bind_group_layout,
-                        ],
-                        push_constant_ranges: &[],
-                    });
-                let full_screen_quad_render_pipeline =
-                    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                        label: Some("Full Screen Quad Render Pipeline"),
-                        layout: Some(&full_screen_quad_render_pipeline_layout),
-                        vertex: wgpu::VertexState {
-                            module: &full_screen_quad_shader,
-                            entry_point: Some("vertex"),
-                            compilation_options: wgpu::PipelineCompilationOptions::default(),
-                            buffers: &[],
-                        },
-                        primitive: wgpu::PrimitiveState {
-                            topology: wgpu::PrimitiveTopology::TriangleStrip,
-                            strip_index_format: None,
-                            front_face: wgpu::FrontFace::Cw,
-                            cull_mode: None,
-                            unclipped_depth: false,
-                            polygon_mode: wgpu::PolygonMode::Fill,
-                            conservative: false,
-                        },
-                        depth_stencil: None,
-                        multisample: wgpu::MultisampleState {
-                            count: 1,
-                            mask: !0,
-                            alpha_to_coverage_enabled: false,
-                        },
-                        fragment: Some(wgpu::FragmentState {
-                            module: &full_screen_quad_shader,
-                            entry_point: Some("fragment"),
-                            compilation_options: wgpu::PipelineCompilationOptions::default(),
-                            targets: &[Some(wgpu::ColorTargetState {
-                                format: surface_config.format,
-                                blend: None,
-                                write_mask: wgpu::ColorWrites::all(),
-                            })],
-                        }),
-                        multiview: None,
-                        cache: None,
-                    });
-
                 info!("Initialized renderer");
 
                 state.set(Some(RenderState {
@@ -291,18 +133,6 @@ impl Plugin for RenderPlugin {
                     surface_config,
                     device,
                     queue,
-
-                    camera_buffer,
-                    camera_bind_group,
-
-                    hyper_spheres_count,
-                    hyper_spheres_buffer,
-
-                    objects_info_buffer,
-                    objects_bind_group_layout,
-                    objects_bind_group,
-
-                    full_screen_quad_render_pipeline,
                 }));
             }
         };
@@ -315,17 +145,13 @@ impl Plugin for RenderPlugin {
         app.init_schedule(PreRender).init_schedule(Render);
         let mut main_schedule = app.world_mut().resource_mut::<MainScheduleOrder>();
         main_schedule.insert_after(PostUpdate, PreRender);
-        main_schedule.insert_after(PreRender, Render);
+        main_schedule.insert_after(PreRender, StartRender);
+        main_schedule.insert_after(StartRender, Render);
+        main_schedule.insert_after(Render, Present);
 
-        app.register_type::<Camera>()
-            .register_type::<MainCamera>()
-            .register_type::<Material>()
-            .register_type::<HyperSphere>()
-            .add_systems(
-                PreRender,
-                (camera::upload_camera, hyper_sphere::upload_hyper_spheres),
-            )
-            .add_systems(Render, render);
+        app.init_resource::<Rendering>()
+            .add_systems(StartRender, start_render)
+            .add_systems(Present, present);
     }
 
     fn ready(&self, app: &App) -> bool {
@@ -348,9 +174,10 @@ impl Plugin for RenderPlugin {
     }
 }
 
-fn render(
+fn start_render(
     mut state: ResMut<RenderState>,
     mut resize_events: EventReader<WindowResized>,
+    mut rendering: ResMut<Rendering>,
 ) -> bevy::ecs::error::Result {
     let RenderState {
         instance: _,
@@ -358,19 +185,7 @@ fn render(
         ref surface,
         ref mut surface_config,
         ref device,
-        ref queue,
-
-        camera_buffer: _,
-        ref camera_bind_group,
-
-        hyper_spheres_count: _,
-        hyper_spheres_buffer: _,
-
-        objects_info_buffer: _,
-        objects_bind_group_layout: _,
-        ref objects_bind_group,
-
-        ref full_screen_quad_render_pipeline,
+        queue: _,
     } = *state;
 
     if let Some(resize_event) = resize_events
@@ -383,51 +198,28 @@ fn render(
         surface.configure(device, surface_config);
 
         info!(
-            "resized surface to {}, {}",
+            "Resized surface to {}, {}",
             surface_config.width, surface_config.height
         );
     }
 
-    let texture = match surface.get_current_texture() {
+    let surface_texture = match surface.get_current_texture() {
         Ok(texture) => texture,
         Err(wgpu::SurfaceError::Outdated) => return Ok(()),
         Err(wgpu::SurfaceError::Timeout) => return Ok(()),
         r => r?,
     };
 
-    let mut encoder = device.create_command_encoder(&wgpu::wgt::CommandEncoderDescriptor {
-        label: Some("Render Encoder"),
-    });
-
-    {
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &texture.texture.create_view(&Default::default()),
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 1.0,
-                        g: 0.0,
-                        b: 1.0,
-                        a: 1.0,
-                    }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
-
-        render_pass.set_pipeline(full_screen_quad_render_pipeline);
-        render_pass.set_bind_group(0, camera_bind_group, &[]);
-        render_pass.set_bind_group(1, objects_bind_group, &[]);
-        render_pass.draw(0..4, 0..1);
-    }
-
-    queue.submit(Some(encoder.finish()));
-    texture.present();
+    rendering.surface_texture = Some(surface_texture);
 
     Ok(())
+}
+
+fn present(state: Res<RenderState>, mut rendering: ResMut<Rendering>) {
+    state
+        .queue
+        .submit(std::mem::take(&mut rendering.command_buffers));
+    if let Some(surface_texture) = rendering.surface_texture.take() {
+        surface_texture.present();
+    }
 }
