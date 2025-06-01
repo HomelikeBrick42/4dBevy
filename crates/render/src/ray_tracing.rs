@@ -29,8 +29,10 @@ pub use materials::*;
 #[derive(Resource)]
 struct RayTracing {
     camera_buffer: wgpu::Buffer,
+    volume_view_camera_buffer: wgpu::Buffer,
     objects_info_buffer: wgpu::Buffer,
     info_bind_group: wgpu::BindGroup,
+    volume_view_info_bind_group: wgpu::BindGroup,
 
     materials_buffer: wgpu::Buffer,
     hyper_spheres_buffer: wgpu::Buffer,
@@ -38,6 +40,7 @@ struct RayTracing {
     objects_bind_group: wgpu::BindGroup,
 
     main_texture: ResultTexture,
+    volume_view_texture: ResultTexture,
 
     ray_tracing_pipeline: wgpu::ComputePipeline,
     full_screen_quad_pipeline: wgpu::RenderPipeline,
@@ -80,6 +83,12 @@ impl Plugin for RayTracingPlugin {
 
         let camera_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Camera Buffer"),
+            size: size_of::<GpuCamera>() as _,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
+            mapped_at_creation: false,
+        });
+        let volume_view_camera_buffer = state.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Volume View Camera Buffer"),
             size: size_of::<GpuCamera>() as _,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::UNIFORM,
             mapped_at_creation: false,
@@ -138,6 +147,21 @@ impl Plugin for RayTracingPlugin {
                 },
             ],
         });
+        let volume_view_info_bind_group =
+            state.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("Volume View Info Bind Group"),
+                layout: &info_bind_group_layout,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: volume_view_camera_buffer.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: objects_info_buffer.as_entire_binding(),
+                    },
+                ],
+            });
 
         let materials_buffer =
             create_materials_buffer(&state.device, size_of::<GpuMaterial>() as _);
@@ -179,6 +203,7 @@ impl Plugin for RayTracingPlugin {
         );
 
         let main_texture = ResultTexture::new(&state.device);
+        let volume_view_texture = ResultTexture::new(&state.device);
 
         let ray_tracing_pipeline_layout =
             state
@@ -255,8 +280,10 @@ impl Plugin for RayTracingPlugin {
 
         app.insert_resource(RayTracing {
             camera_buffer,
+            volume_view_camera_buffer,
             objects_info_buffer,
             info_bind_group,
+            volume_view_info_bind_group,
 
             materials_buffer,
             hyper_spheres_buffer,
@@ -264,6 +291,7 @@ impl Plugin for RayTracingPlugin {
             objects_bind_group,
 
             main_texture,
+            volume_view_texture,
 
             ray_tracing_pipeline,
             full_screen_quad_pipeline,
@@ -332,9 +360,10 @@ fn camera_upload(
         let rotation = transform.rotor_part();
 
         let position = transform.transform((0.0, 0.0, 0.0, 0.0)).into();
-        let forward = rotation.rotate((1.0, 0.0, 0.0, 0.0)).into();
-        let right = rotation.rotate((0.0, 0.0, 1.0, 0.0)).into();
-        let up = rotation.rotate((0.0, 1.0, 0.0, 0.0)).into();
+        let x = rotation.rotate((1.0, 0.0, 0.0, 0.0)).into();
+        let y = rotation.rotate((0.0, 1.0, 0.0, 0.0)).into();
+        let z = rotation.rotate((0.0, 0.0, 1.0, 0.0)).into();
+        let w = rotation.rotate((0.0, 0.0, 0.0, 1.0)).into();
 
         let aspect = state.surface_config.width as f32 / state.surface_config.height as f32;
 
@@ -345,9 +374,9 @@ fn camera_upload(
 
         let gpu_camera = GpuCamera {
             position,
-            forward,
-            right,
-            up,
+            forward: x,
+            right: z,
+            up: y,
             aspect,
             min_distance,
             max_distance,
@@ -358,6 +387,23 @@ fn camera_upload(
             &ray_tracing.camera_buffer,
             0,
             bytemuck::bytes_of(&gpu_camera),
+        );
+
+        let volume_mode_gpu_camera = GpuCamera {
+            position,
+            forward: x,
+            right: z,
+            up: w,
+            aspect,
+            min_distance,
+            max_distance,
+            _padding: Default::default(),
+        };
+
+        state.queue.write_buffer(
+            &ray_tracing.volume_view_camera_buffer,
+            0,
+            bytemuck::bytes_of(&volume_mode_gpu_camera),
         );
     }
 }
@@ -515,6 +561,11 @@ fn ray_trace(
                     surface_size.width,
                     surface_size.height,
                 );
+                ray_tracing.volume_view_texture.resize(
+                    &state.device,
+                    surface_size.width.div_ceil(4),
+                    surface_size.height.div_ceil(4),
+                );
             }
         }
 
@@ -538,6 +589,15 @@ fn ray_trace(
             ray_tracing_pass.dispatch_workgroups(
                 main_texture_size.width.div_ceil(16),
                 main_texture_size.height.div_ceil(16),
+                1,
+            );
+
+            let volume_view_texture_size = ray_tracing.volume_view_texture.texture.size();
+            ray_tracing_pass.set_bind_group(0, &ray_tracing.volume_view_texture.bind_group, &[]);
+            ray_tracing_pass.set_bind_group(1, &ray_tracing.volume_view_info_bind_group, &[]);
+            ray_tracing_pass.dispatch_workgroups(
+                volume_view_texture_size.width.div_ceil(16),
+                volume_view_texture_size.height.div_ceil(16),
                 1,
             );
         }
@@ -565,6 +625,13 @@ fn ray_trace(
             rendering_pass.set_pipeline(&ray_tracing.full_screen_quad_pipeline);
             rendering_pass.set_bind_group(0, &ray_tracing.main_texture.rendering_bind_group, &[]);
             rendering_pass.draw(0..4, 0..1);
+
+            rendering_pass.set_bind_group(
+                0,
+                &ray_tracing.volume_view_texture.rendering_bind_group,
+                &[],
+            );
+            rendering_pass.draw(0..4, 1..2);
         }
         state.queue.submit(std::iter::once(encoder.finish()));
     }
