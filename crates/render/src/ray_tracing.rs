@@ -12,6 +12,7 @@ use bevy::{
     },
 };
 use bytemuck::{Pod, Zeroable};
+use result_texture::ResultTexture;
 use std::{mem::offset_of, num::NonZero};
 use transform::GlobalTransform;
 use wgpu::util::DeviceExt;
@@ -19,6 +20,7 @@ use wgpu::util::DeviceExt;
 mod camera;
 mod hyper_spheres;
 mod materials;
+mod result_texture;
 
 pub use camera::*;
 pub use hyper_spheres::*;
@@ -35,11 +37,7 @@ struct RayTracing {
     objects_bind_group_layout: wgpu::BindGroupLayout,
     objects_bind_group: wgpu::BindGroup,
 
-    main_texture: wgpu::Texture,
-    main_texture_bind_group_layout: wgpu::BindGroupLayout,
-    main_texture_bind_group: wgpu::BindGroup,
-    rendering_main_texture_bind_group_layout: wgpu::BindGroupLayout,
-    rendering_main_texture_bind_group: wgpu::BindGroup,
+    main_texture: ResultTexture,
 
     ray_tracing_pipeline: wgpu::ComputePipeline,
     full_screen_quad_pipeline: wgpu::RenderPipeline,
@@ -180,59 +178,7 @@ impl Plugin for RayTracingPlugin {
             &hyper_spheres_buffer,
         );
 
-        let main_texture = create_main_texture(&state.device, 1, 1);
-
-        let main_texture_bind_group_layout =
-            state
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Main Texture Bind Group Layout"),
-                    entries: &[wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::StorageTexture {
-                            access: wgpu::StorageTextureAccess::WriteOnly,
-                            format: wgpu::TextureFormat::Rgba32Float,
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                        },
-                        count: None,
-                    }],
-                });
-        let main_texture_bind_group = create_main_texture_bind_group(
-            &state.device,
-            &main_texture_bind_group_layout,
-            &main_texture,
-        );
-
-        let rendering_main_texture_bind_group_layout =
-            state
-                .device
-                .create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                    label: Some("Rendering Main Texture Bind Group Layout"),
-                    entries: &[
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 0,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Texture {
-                                sample_type: wgpu::TextureSampleType::Float { filterable: false },
-                                view_dimension: wgpu::TextureViewDimension::D2,
-                                multisampled: false,
-                            },
-                            count: None,
-                        },
-                        wgpu::BindGroupLayoutEntry {
-                            binding: 1,
-                            visibility: wgpu::ShaderStages::FRAGMENT,
-                            ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::NonFiltering),
-                            count: None,
-                        },
-                    ],
-                });
-        let rendering_main_texture_bind_group = create_rendering_main_texture_bind_group(
-            &state.device,
-            &rendering_main_texture_bind_group_layout,
-            &main_texture,
-        );
+        let main_texture = ResultTexture::new(&state.device);
 
         let ray_tracing_pipeline_layout =
             state
@@ -240,7 +186,7 @@ impl Plugin for RayTracingPlugin {
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Ray Tracing Pipeline Layout"),
                     bind_group_layouts: &[
-                        &main_texture_bind_group_layout,
+                        &main_texture.bind_group_layout,
                         &info_bind_group_layout,
                         &objects_bind_group_layout,
                     ],
@@ -263,7 +209,7 @@ impl Plugin for RayTracingPlugin {
                 .device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                     label: Some("Full Screen Quad Pipeline Layout"),
-                    bind_group_layouts: &[&rendering_main_texture_bind_group_layout],
+                    bind_group_layouts: &[&main_texture.rendering_bind_group_layout],
                     push_constant_ranges: &[],
                 });
         let full_screen_quad_pipeline =
@@ -318,10 +264,6 @@ impl Plugin for RayTracingPlugin {
             objects_bind_group,
 
             main_texture,
-            main_texture_bind_group_layout,
-            main_texture_bind_group,
-            rendering_main_texture_bind_group_layout,
-            rendering_main_texture_bind_group,
 
             ray_tracing_pipeline,
             full_screen_quad_pipeline,
@@ -368,74 +310,6 @@ fn create_objects_bind_group(
             wgpu::BindGroupEntry {
                 binding: 1,
                 resource: hyper_spheres_buffer.as_entire_binding(),
-            },
-        ],
-    })
-}
-
-fn create_main_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
-    device.create_texture(&wgpu::wgt::TextureDescriptor {
-        label: Some("Main Texture"),
-        size: wgpu::Extent3d {
-            width,
-            height,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba32Float,
-        usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::TEXTURE_BINDING,
-        view_formats: &[],
-    })
-}
-
-fn create_main_texture_bind_group(
-    device: &wgpu::Device,
-    main_texture_bind_group_layout: &wgpu::BindGroupLayout,
-    main_texture: &wgpu::Texture,
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Main Texture Bind Group"),
-        layout: main_texture_bind_group_layout,
-        entries: &[wgpu::BindGroupEntry {
-            binding: 0,
-            resource: wgpu::BindingResource::TextureView(
-                &main_texture.create_view(&Default::default()),
-            ),
-        }],
-    })
-}
-
-fn create_rendering_main_texture_bind_group(
-    device: &wgpu::Device,
-    rendering_main_texture_bind_group_layout: &wgpu::BindGroupLayout,
-    main_texture: &wgpu::Texture,
-) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
-        label: Some("Rendering Main Texture Bind Group"),
-        layout: rendering_main_texture_bind_group_layout,
-        entries: &[
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: wgpu::BindingResource::TextureView(
-                    &main_texture.create_view(&Default::default()),
-                ),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: wgpu::BindingResource::Sampler(&device.create_sampler(
-                    &wgpu::SamplerDescriptor {
-                        label: Some("Rendering Main Texture Sampler"),
-                        address_mode_u: wgpu::AddressMode::ClampToEdge,
-                        address_mode_v: wgpu::AddressMode::ClampToEdge,
-                        address_mode_w: wgpu::AddressMode::ClampToEdge,
-                        mag_filter: wgpu::FilterMode::Nearest,
-                        min_filter: wgpu::FilterMode::Nearest,
-                        mipmap_filter: wgpu::FilterMode::Nearest,
-                        ..Default::default()
-                    },
-                )),
             },
         ],
     })
@@ -634,21 +508,13 @@ fn ray_trace(
     if let Some(surface_texture) = &rendering.surface_texture {
         {
             let surface_size = surface_texture.texture.size();
-            let main_texture_size = ray_tracing.main_texture.size();
+            let main_texture_size = ray_tracing.main_texture.texture.size();
             if surface_size != main_texture_size {
-                ray_tracing.main_texture =
-                    create_main_texture(&state.device, surface_size.width, surface_size.height);
-                ray_tracing.main_texture_bind_group = create_main_texture_bind_group(
+                ray_tracing.main_texture.resize(
                     &state.device,
-                    &ray_tracing.main_texture_bind_group_layout,
-                    &ray_tracing.main_texture,
+                    surface_size.width,
+                    surface_size.height,
                 );
-                ray_tracing.rendering_main_texture_bind_group =
-                    create_rendering_main_texture_bind_group(
-                        &state.device,
-                        &ray_tracing.rendering_main_texture_bind_group_layout,
-                        &ray_tracing.main_texture,
-                    );
             }
         }
 
@@ -663,10 +529,10 @@ fn ray_trace(
                 timestamp_writes: None,
             });
 
-            let main_texture_size = ray_tracing.main_texture.size();
+            let main_texture_size = ray_tracing.main_texture.texture.size();
 
             ray_tracing_pass.set_pipeline(&ray_tracing.ray_tracing_pipeline);
-            ray_tracing_pass.set_bind_group(0, &ray_tracing.main_texture_bind_group, &[]);
+            ray_tracing_pass.set_bind_group(0, &ray_tracing.main_texture.bind_group, &[]);
             ray_tracing_pass.set_bind_group(1, &ray_tracing.info_bind_group, &[]);
             ray_tracing_pass.set_bind_group(2, &ray_tracing.objects_bind_group, &[]);
             ray_tracing_pass.dispatch_workgroups(
@@ -697,7 +563,7 @@ fn ray_trace(
             });
 
             rendering_pass.set_pipeline(&ray_tracing.full_screen_quad_pipeline);
-            rendering_pass.set_bind_group(0, &ray_tracing.rendering_main_texture_bind_group, &[]);
+            rendering_pass.set_bind_group(0, &ray_tracing.main_texture.rendering_bind_group, &[]);
             rendering_pass.draw(0..4, 0..1);
         }
         state.queue.submit(std::iter::once(encoder.finish()));
