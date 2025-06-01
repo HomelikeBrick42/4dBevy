@@ -5,57 +5,46 @@ import include.objects_info;
 import include.material;
 
 [vk::binding(0, 0)]
-ConstantBuffer<Camera, Std430DataLayout> camera;
-
-[vk::binding(1, 0)]
-ConstantBuffer<ObjectsInfo, Std430DataLayout> objects_info;
+WTexture2D main_texture;
 
 [vk::binding(0, 1)]
-StructuredBuffer<Material, Std430DataLayout> materials;
+ConstantBuffer<Camera, Std430DataLayout> camera;
 
 [vk::binding(1, 1)]
+ConstantBuffer<ObjectsInfo, Std430DataLayout> objects_info;
+
+[vk::binding(0, 2)]
+StructuredBuffer<Material, Std430DataLayout> materials;
+
+[vk::binding(1, 2)]
 StructuredBuffer<HyperSphere, Std430DataLayout> hyper_spheres;
 
-struct VertexOutput
+[shader("compute")]
+[numthreads(16, 16, 1)]
+void ray_trace(uint3 global_index: SV_DispatchThreadID)
 {
-    float4 clip_position : SV_Position;
-    float2 uv;
-}
+    var width : uint;
+    var height : uint;
+    main_texture.GetDimensions(width, height);
 
-struct FragmentOutput
-{
-    float4 color : SV_Target;
-}
+    if (global_index.x >= width || global_index.y >= height)
+        return;
 
-[shader("vertex")]
-VertexOutput vertex(uint vertex_index: SV_VertexID)
-{
-    var out : VertexOutput;
-    let x = float((vertex_index >> 0) & 1);
-    let y = float((vertex_index >> 1) & 1);
+    let uv = (float2(global_index.xy) / float2(width, height)) * 2.0 - 1.0;
 
-    out.uv = float2(x, y) * 2.0 - 1.0;
-    out.clip_position = float4(out.uv, 0.0, 1.0);
-
-    return out;
-}
-
-[shader("fragment")]
-FragmentOutput fragment(VertexOutput in)
-{
-    var out : FragmentOutput;
+    var color = float3(0.0, 0.0, 0.0);
 
     var ray : Ray;
     ray.origin = camera.position;
-    ray.direction = normalize(camera.forward + camera.right * in.uv.x * camera.aspect + camera.up * in.uv.y);
+    ray.direction = normalize(camera.forward + camera.right * uv.x * camera.aspect + camera.up * uv.y);
 
     let hit = intersect_scene(ray);
     if (hit.hasValue)
     {
         let hit = hit.value;
 
-        let color_ = materials[hit.material_id].base_color;
-        let color = float3(color_.red, color_.green, color_.blue);
+        let hit_color_ = materials[hit.material_id].base_color;
+        let hit_color = float3(hit_color_.red, hit_color_.green, hit_color_.blue);
 
         var sun_ray : Ray;
         sun_ray.origin = hit.position;
@@ -65,16 +54,16 @@ FragmentOutput fragment(VertexOutput in)
         let ambient_light = 0.1;
 
         if (sun_hit.hasValue)
-            out.color = float4(color * ambient_light, 1.0);
+            color = hit_color * ambient_light;
         else
-            out.color = float4(color * max(ambient_light, dot(hit.normal, sun_ray.direction)), 1.0);
+            color = hit_color * max(ambient_light, dot(hit.normal, sun_ray.direction));
     }
     else
     {
-        out.color = float4(sky_color(ray), 1.0);
+        color = sky_color(ray);
     }
 
-    return out;
+    main_texture.Store(global_index.xy, float4(color, 1.0));
 }
 
 static const float4 SUN_DIRECTION = normalize(float4(-0.3, 1.0, 0.3, 0.0));
