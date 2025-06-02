@@ -18,19 +18,20 @@ bevy = { version = "0.16", default-features = false, features = [
     "multi_threaded",
 ] }
 bytemuck = "1.23.0"
-# Set max log levels. This helps avoid unwanted low-severity log spam, which can affect performance.
-log = { version = "0.4", features = [
-    "max_level_debug",
-    "release_max_level_warn",
-] }
-tracing = { version = "0.1", features = [
-    "max_level_debug",
-    "release_max_level_warn",
-] }
 render = { path = "crates/render" }
 transform = { path = "crates/transform" }
 
 [dependencies]
+# Set max log levels. This helps avoid unwanted low-severity log spam, which can affect performance.
+log = { version = "0.4", features = [
+    "max_level_trace",
+    "release_max_level_warn",
+] }
+tracing = { version = "0.1", features = [
+    "max_level_trace",
+    "release_max_level_warn",
+] }
+
 bevy = { workspace = true }
 render = { workspace = true }
 transform = { workspace = true }
