@@ -16,7 +16,7 @@ impl Plugin for ChunksPlugin {
 
 const BLOCK_BIT: u32 = 1 << 31;
 
-#[derive(Clone, Copy, Zeroable, Pod)]
+#[derive(Debug, Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 struct Chunk {
     // `(index >> 31) == 1` is a block id
@@ -31,7 +31,7 @@ impl Default for Chunk {
     }
 }
 
-#[derive(Resource)]
+#[derive(Resource, Debug)]
 pub struct Chunks {
     chunks: Vec<Chunk>,
     free_chunks: BTreeSet<u32>,
@@ -50,11 +50,11 @@ impl Default for Chunks {
 
 impl Chunks {
     pub fn set_block(&mut self, x: u32, y: u32, z: u32, w: u32, block_id: u32) {
-        debug_assert_ne!(block_id & BLOCK_BIT, 0);
-        let mut nodes = ArrayVec::<_, 31>::new();
+        debug_assert_eq!(block_id & BLOCK_BIT, 0);
+        let mut nodes = ArrayVec::<_, 32>::new();
         nodes.push((self.root, 0));
         for index in 0..31 {
-            let node = nodes.last().unwrap().1;
+            let node = nodes.last().unwrap().0;
             let link_index = Self::link_index(x, y, z, w, index);
             let id = self.chunks[node as usize].links[link_index];
             nodes.push((
@@ -71,7 +71,7 @@ impl Chunks {
                 link_index,
             ));
         }
-        let bottom_node = nodes.last().unwrap().1;
+        let bottom_node = nodes.last().unwrap().0;
         let link_index = Self::link_index(x, y, z, w, 31);
         self.chunks[bottom_node as usize].links[link_index] = block_id | BLOCK_BIT;
         while let Some((id, parent_link_index)) = nodes.pop() {
@@ -86,6 +86,7 @@ impl Chunks {
                 }
             }
         }
+        self.cleanup_unused_chunks();
     }
 
     pub fn get_block(&self, x: u32, y: u32, z: u32, w: u32) -> u32 {
@@ -126,11 +127,15 @@ impl Chunks {
 
     fn deallocate_chunk(&mut self, id: u32) {
         self.free_chunks.insert(id);
+    }
+
+    fn cleanup_unused_chunks(&mut self) {
         while let Some(&last) = self.free_chunks.last() {
             if self.chunks.len() - 1 != last as usize {
                 break;
             }
             self.chunks.pop();
+            println!("removed {}", self.chunks.len());
             self.free_chunks.pop_last();
         }
     }
