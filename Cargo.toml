@@ -18,6 +18,7 @@ bevy = { version = "0.16", default-features = false, features = [
     "multi_threaded",
 ] }
 bytemuck = "1.23.0"
+chunks = { path = "crates/chunks" }
 render = { path = "crates/render" }
 transform = { path = "crates/transform" }
 
@@ -33,6 +34,7 @@ tracing = { version = "0.1", features = [
 ] }
 
 bevy = { workspace = true }
+chunks = { workspace = true }
 render = { workspace = true }
 transform = { workspace = true }
 
