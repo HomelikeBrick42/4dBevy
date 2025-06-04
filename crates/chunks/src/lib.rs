@@ -1,10 +1,10 @@
-use std::{collections::BTreeSet, num::NonZeroU32};
-
+use arrayvec::ArrayVec;
 use bevy::{
     app::{App, Plugin},
     ecs::resource::Resource,
 };
 use bytemuck::{Pod, Zeroable};
+use std::collections::BTreeSet;
 
 pub struct ChunksPlugin;
 
@@ -14,18 +14,28 @@ impl Plugin for ChunksPlugin {
     }
 }
 
-#[derive(Default, Clone, Copy, Zeroable, Pod)]
+const BLOCK_BIT: u32 = 1 << 31;
+
+#[derive(Clone, Copy, Zeroable, Pod)]
 #[repr(C)]
 struct Chunk {
-    // Some(index) where `(index >> 31) == 1` is a block id
-    links: [Option<NonZeroU32>; 16],
+    // `(index >> 31) == 1` is a block id
+    links: [u32; 16],
+}
+
+impl Default for Chunk {
+    fn default() -> Self {
+        Self {
+            links: [BLOCK_BIT; 16],
+        }
+    }
 }
 
 #[derive(Resource)]
 pub struct Chunks {
     chunks: Vec<Chunk>,
-    free_chunks: BTreeSet<NonZeroU32>,
-    root: Option<NonZeroU32>,
+    free_chunks: BTreeSet<u32>,
+    root: u32,
 }
 
 impl Default for Chunks {
@@ -33,87 +43,91 @@ impl Default for Chunks {
         Self {
             chunks: vec![Chunk::default()],
             free_chunks: BTreeSet::new(),
-            root: None,
+            root: 0,
         }
     }
 }
 
-const TOP_BIT: u32 = 1 << 31;
-
 impl Chunks {
     pub fn set_block(&mut self, x: u32, y: u32, z: u32, w: u32, block_id: u32) {
-        debug_assert_ne!(block_id & TOP_BIT, 0);
-        let mut node = match self.root {
-            Some(id) => id.get(),
-            None => {
-                let id = self.allocate_chunk();
-                self.root = Some(id);
-                id.get()
-            }
-        };
-        for i in 0..31 {
-            if node & TOP_BIT != 0 {
-                break;
-            }
-            let x_bit = (x as usize >> (31 - i)) & 1;
-            let y_bit = (y as usize >> (31 - i)) & 1;
-            let z_bit = (z as usize >> (31 - i)) & 1;
-            let w_bit = (w as usize >> (31 - i)) & 1;
-            let link_index = (x_bit << 0) | (y_bit << 1) | (z_bit << 2) | (w_bit << 3);
-            node = match self.chunks[node as usize].links[link_index] {
-                Some(node) => node.get(),
-                None => {
-                    let id = self.allocate_chunk();
-                    self.chunks[node as usize].links[link_index] = Some(id);
-                    id.get()
-                }
-            };
+        debug_assert_ne!(block_id & BLOCK_BIT, 0);
+        let mut nodes = ArrayVec::<_, 31>::new();
+        nodes.push((self.root, 0));
+        for index in 0..31 {
+            let node = nodes.last().unwrap().1;
+            let link_index = Self::link_index(x, y, z, w, index);
+            let id = self.chunks[node as usize].links[link_index];
+            nodes.push((
+                if id & BLOCK_BIT != 0 {
+                    let new_id = self.allocate_chunk();
+                    for link in &mut self.chunks[new_id as usize].links {
+                        *link = id;
+                    }
+                    self.chunks[node as usize].links[link_index] = new_id;
+                    new_id
+                } else {
+                    id
+                },
+                link_index,
+            ));
         }
-        let x_bit = x as usize & 1;
-        let y_bit = y as usize & 1;
-        let z_bit = z as usize & 1;
-        let w_bit = w as usize & 1;
-        let link_index = (x_bit << 0) | (y_bit << 1) | (z_bit << 2) | (w_bit << 3);
-        self.chunks[node as usize].links[link_index] =
-            Some(NonZeroU32::new(block_id | TOP_BIT).unwrap());
+        let bottom_node = nodes.last().unwrap().1;
+        let link_index = Self::link_index(x, y, z, w, 31);
+        self.chunks[bottom_node as usize].links[link_index] = block_id | BLOCK_BIT;
+        while let Some((id, parent_link_index)) = nodes.pop() {
+            let first = self.chunks[id as usize].links[0];
+            if self.chunks[id as usize].links[1..]
+                .iter()
+                .all(|&element| first == element)
+            {
+                if let Some(&(parent_id, _)) = nodes.last() {
+                    self.deallocate_chunk(id);
+                    self.chunks[parent_id as usize].links[parent_link_index] = first;
+                }
+            }
+        }
     }
 
     pub fn get_block(&self, x: u32, y: u32, z: u32, w: u32) -> Option<u32> {
-        let mut node = self.root?.get();
-        for i in 0..32 {
-            if node & TOP_BIT != 0 {
+        let mut node = self.root;
+        for index in 0..32 {
+            if node & BLOCK_BIT != 0 {
                 break;
             }
-            let x_bit = (x as usize >> (31 - i)) & 1;
-            let y_bit = (y as usize >> (31 - i)) & 1;
-            let z_bit = (z as usize >> (31 - i)) & 1;
-            let w_bit = (w as usize >> (31 - i)) & 1;
-            let link_index = (x_bit << 0) | (y_bit << 1) | (z_bit << 2) | (w_bit << 3);
-            node = self.chunks[node as usize].links[link_index]?.get();
+            let link_index = Self::link_index(x, y, z, w, index);
+            node = self.chunks[node as usize].links[link_index];
         }
-        debug_assert_ne!(node & TOP_BIT, 0);
-        Some(node & !TOP_BIT)
+        debug_assert_ne!(node & BLOCK_BIT, 0);
+        Some(node & !BLOCK_BIT)
     }
 
-    fn allocate_chunk(&mut self) -> NonZeroU32 {
+    fn link_index(x: u32, y: u32, z: u32, w: u32, index: usize) -> usize {
+        let x_bit = (x as usize >> (31 - index)) & 1;
+        let y_bit = (y as usize >> (31 - index)) & 1;
+        let z_bit = (z as usize >> (31 - index)) & 1;
+        let w_bit = (w as usize >> (31 - index)) & 1;
+        (x_bit << 0) | (y_bit << 1) | (z_bit << 2) | (w_bit << 3)
+    }
+
+    fn allocate_chunk(&mut self) -> u32 {
         match self.free_chunks.pop_first() {
             Some(id) => {
-                self.chunks[id.get() as usize] = Chunk::default();
+                self.chunks[id as usize] = Chunk::default();
                 id
             }
             None => {
-                assert!(self.chunks.len() < TOP_BIT as usize);
+                assert!(self.chunks.len() < BLOCK_BIT as usize);
                 let id = self.chunks.len() as u32;
                 self.chunks.push(Chunk::default());
-                NonZeroU32::new(id).unwrap()
+                id
             }
         }
     }
 
-    fn deallocate_chunk(&mut self, id: NonZeroU32) {
+    fn deallocate_chunk(&mut self, id: u32) {
         self.free_chunks.insert(id);
-        while let Some(last) = self.free_chunks.last() {
-            if self.chunks.len() - 1 != last.get() as usize {
+        while let Some(&last) = self.free_chunks.last() {
+            if self.chunks.len() - 1 != last as usize {
                 break;
             }
             self.chunks.pop();

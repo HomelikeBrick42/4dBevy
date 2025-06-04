@@ -17,7 +17,7 @@ bevy = { version = "0.16", default-features = false, features = [
     "bevy_winit",
     "multi_threaded",
 ] }
-bytemuck = "1.23.0"
+bytemuck = { version = "1.23.0", features = ["derive"] }
 chunks = { path = "crates/chunks" }
 render = { path = "crates/render" }
 transform = { path = "crates/transform" }
