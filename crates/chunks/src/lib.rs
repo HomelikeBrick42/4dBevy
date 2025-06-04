@@ -88,7 +88,7 @@ impl Chunks {
         }
     }
 
-    pub fn get_block(&self, x: u32, y: u32, z: u32, w: u32) -> Option<u32> {
+    pub fn get_block(&self, x: u32, y: u32, z: u32, w: u32) -> u32 {
         let mut node = self.root;
         for index in 0..32 {
             if node & BLOCK_BIT != 0 {
@@ -98,7 +98,7 @@ impl Chunks {
             node = self.chunks[node as usize].links[link_index];
         }
         debug_assert_ne!(node & BLOCK_BIT, 0);
-        Some(node & !BLOCK_BIT)
+        node & !BLOCK_BIT
     }
 
     fn link_index(x: u32, y: u32, z: u32, w: u32, index: usize) -> usize {
