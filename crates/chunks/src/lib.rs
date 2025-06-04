@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{collections::BTreeSet, num::NonZeroU32};
 
 use bevy::{
     app::{App, Plugin},
@@ -24,7 +24,7 @@ struct Chunk {
 #[derive(Resource)]
 pub struct Chunks {
     chunks: Vec<Chunk>,
-    free_chunks: Vec<NonZeroU32>,
+    free_chunks: BTreeSet<NonZeroU32>,
     root: Option<NonZeroU32>,
 }
 
@@ -32,7 +32,7 @@ impl Default for Chunks {
     fn default() -> Self {
         Self {
             chunks: vec![Chunk::default()],
-            free_chunks: vec![],
+            free_chunks: BTreeSet::new(),
             root: None,
         }
     }
@@ -96,7 +96,7 @@ impl Chunks {
     }
 
     fn allocate_chunk(&mut self) -> NonZeroU32 {
-        match self.free_chunks.pop() {
+        match self.free_chunks.pop_first() {
             Some(id) => {
                 self.chunks[id.get() as usize] = Chunk::default();
                 id
@@ -107,6 +107,17 @@ impl Chunks {
                 self.chunks.push(Chunk::default());
                 NonZeroU32::new(id).unwrap()
             }
+        }
+    }
+
+    fn deallocate_chunk(&mut self, id: NonZeroU32) {
+        self.free_chunks.insert(id);
+        while let Some(last) = self.free_chunks.last() {
+            if self.chunks.len() - 1 != last.get() as usize {
+                break;
+            }
+            self.chunks.pop();
+            self.free_chunks.pop_last();
         }
     }
 }
