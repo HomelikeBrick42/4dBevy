@@ -16,6 +16,7 @@ use bevy::{
     window::WindowPlugin,
     winit::WinitPlugin,
 };
+use chunks::ChunksPlugin;
 use movement_control::{MovementControl, handle_cursor_locking, movement_controls};
 use render::{
     RenderPlugin,
@@ -43,6 +44,7 @@ fn main() -> AppExit {
         AssetPlugin::default(),
         <WinitPlugin>::default(),
         TransformPlugin,
+        ChunksPlugin,
         RenderPlugin,
     ))
     .add_systems(Startup, setup)

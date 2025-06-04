@@ -4,10 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+wgpu = { version = "25.0.2", features = ["fragile-send-sync-non-atomic-wasm"] }
+
 bevy = { workspace = true }
 bytemuck = { workspace = true }
+chunks = { workspace = true }
 transform = { workspace = true }
-wgpu = { version = "25.0.2", features = ["fragile-send-sync-non-atomic-wasm"] }
 
 [lints]
 workspace = true
